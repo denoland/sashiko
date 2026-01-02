@@ -1,14 +1,14 @@
-use anyhow::{anyhow, Result};
-use futures::{SinkExt, StreamExt};
+use anyhow::{Result, anyhow};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
-use tokio_util::codec::{Framed, LinesCodec};
 use tracing::{debug, info};
 
 pub struct NntpClient {
-    stream: Framed<TcpStream, LinesCodec>,
+    stream: BufReader<TcpStream>,
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct GroupInfo {
     pub number: u64,
     pub low: u64,
@@ -21,32 +21,43 @@ impl NntpClient {
         let addr = format!("{}:{}", host, port);
         info!("Connecting to NNTP server at {}", addr);
         let stream = TcpStream::connect(addr).await?;
-        let mut framed = Framed::new(stream, LinesCodec::new());
+        let mut reader = BufReader::new(stream);
 
-        let response = framed
-            .next()
-            .await
-            .ok_or_else(|| anyhow!("Connection closed during handshake"))??;
+        let mut buf = Vec::new();
+        reader.read_until(b'\n', &mut buf).await?;
+        let response = String::from_utf8_lossy(&buf).trim().to_string();
 
         if !response.starts_with("200") && !response.starts_with("201") {
             return Err(anyhow!("Unexpected welcome message: {}", response));
         }
 
         debug!("Connected: {}", response);
-        Ok(Self { stream: framed })
+        Ok(Self { stream: reader })
+    }
+
+    async fn send_command(&mut self, command: &str) -> Result<()> {
+        self.stream.write_all(command.as_bytes()).await?;
+        self.stream.write_all(b"\r\n").await?;
+        self.stream.flush().await?;
+        Ok(())
+    }
+
+    async fn read_response(&mut self) -> Result<String> {
+        let mut buf = Vec::new();
+        self.stream.read_until(b'\n', &mut buf).await?;
+        Ok(String::from_utf8_lossy(&buf).trim().to_string())
     }
 
     pub async fn group(&mut self, group_name: &str) -> Result<GroupInfo> {
-        let command = format!("GROUP {}", group_name);
-        self.stream.send(command).await?;
-
-        let response = self.stream
-            .next()
-            .await
-            .ok_or_else(|| anyhow!("Connection closed"))??;
+        self.send_command(&format!("GROUP {}", group_name)).await?;
+        let response = self.read_response().await?;
 
         if !response.starts_with("211") {
-            return Err(anyhow!("Failed to select group {}: {}", group_name, response));
+            return Err(anyhow!(
+                "Failed to select group {}: {}",
+                group_name,
+                response
+            ));
         }
 
         let parts: Vec<&str> = response.split_whitespace().collect();
@@ -63,44 +74,44 @@ impl NntpClient {
     }
 
     pub async fn article(&mut self, id: &str) -> Result<Vec<String>> {
-        // id can be Message-ID (with <>) or article number
-        let command = format!("ARTICLE {}", id);
-        self.stream.send(command).await?;
-
-        let response = self.stream
-            .next()
-            .await
-            .ok_or_else(|| anyhow!("Connection closed"))??;
+        self.send_command(&format!("ARTICLE {}", id)).await?;
+        let response = self.read_response().await?;
 
         if !response.starts_with("220") {
-             return Err(anyhow!("Failed to retrieve article {}: {}", id, response));
+            return Err(anyhow!("Failed to retrieve article {}: {}", id, response));
         }
 
         let mut lines = Vec::new();
-        while let Some(line) = self.stream.next().await {
-            let line = line?;
+        loop {
+            let mut buf = Vec::new();
+            let n = self.stream.read_until(b'\n', &mut buf).await?;
+            if n == 0 {
+                break; // EOF
+            }
+
+            // Convert to string (lossy)
+            let line_raw = String::from_utf8_lossy(&buf);
+            let line = line_raw.trim_end(); // remove \r\n
+
             if line == "." {
                 break;
             }
-            // Dot-unstuffing: if line starts with "..", remove one dot
-            let line = if line.starts_with("..") {
+            // Dot-unstuffing
+            let content = if line.starts_with("..") {
                 line[1..].to_string()
             } else {
-                line
+                line.to_string()
             };
-            lines.push(line);
+            lines.push(content);
         }
 
         Ok(lines)
     }
 
     pub async fn quit(&mut self) -> Result<()> {
-        self.stream.send("QUIT").await?;
-        let response = self.stream
-            .next()
-            .await
-            .ok_or_else(|| anyhow!("Connection closed"))??;
-        
+        self.send_command("QUIT").await?;
+        let response = self.read_response().await?;
+
         if !response.starts_with("205") {
             debug!("QUIT response was not 205: {}", response);
         }

@@ -30,4 +30,41 @@ impl Database {
         info!("Database schema applied");
         Ok(())
     }
+
+    pub async fn ensure_mailing_list(&self, name: &str, group: &str) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR IGNORE INTO mailing_lists (name, nntp_group, last_article_num) VALUES (?, ?, 0)",
+                libsql::params![name, group],
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_last_article_num(&self, group: &str) -> Result<u64> {
+        let mut rows = self
+            .conn
+            .query(
+                "SELECT last_article_num FROM mailing_lists WHERE nntp_group = ?",
+                libsql::params![group],
+            )
+            .await?;
+
+        if let Ok(Some(row)) = rows.next().await {
+            let num: i64 = row.get(0)?;
+            Ok(num as u64)
+        } else {
+            Ok(0)
+        }
+    }
+
+    pub async fn update_last_article_num(&self, group: &str, num: u64) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE mailing_lists SET last_article_num = ? WHERE nntp_group = ?",
+                libsql::params![num as i64, group],
+            )
+            .await?;
+        Ok(())
+    }
 }

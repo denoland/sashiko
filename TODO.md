@@ -6,7 +6,7 @@
 - [x] Implement NNTP Ingestor (polling `nntp.lore.kernel.org`).
 - [x] Set up libSQL/Turso schema for mailing lists and patchsets.
 - [x] Implement internal task queue (tokio channels).
-- [ ] Implement article state tracking (high-water mark).
+- [x] Implement article state tracking (high-water mark).
 - [ ] Set up structured logging (`tracing`) and observability baseline.
 
 ## Phase 2: Git Ops & Patch Processing
