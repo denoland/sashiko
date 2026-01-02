@@ -1,21 +1,24 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::path::{Path, PathBuf};
-use tokio::process::Command;
 use tempfile::TempDir;
+use tokio::process::Command;
 use tracing::{info, warn};
 
+#[allow(dead_code)]
 pub struct GitWorktree {
+    #[allow(dead_code)]
     pub dir: TempDir,
     pub path: PathBuf,
 }
 
 impl GitWorktree {
+    #[allow(dead_code)]
     pub async fn new(repo_path: &Path, commit_hash: &str) -> Result<Self> {
         let temp_dir = TempDir::new()?;
         let path = temp_dir.path().to_path_buf();
 
         info!("Creating worktree at {:?}", path);
-        
+
         // git worktree add --detach <path> <commit>
         let output = Command::new("git")
             .current_dir(repo_path)
@@ -28,7 +31,7 @@ impl GitWorktree {
             .await?;
 
         if !output.status.success() {
-             return Err(anyhow!(
+            return Err(anyhow!(
                 "Failed to create worktree: {}",
                 String::from_utf8_lossy(&output.stderr)
             ));
@@ -40,6 +43,7 @@ impl GitWorktree {
         })
     }
 
+    #[allow(dead_code)]
     pub async fn apply_patch(&self, patch_content: &str) -> Result<()> {
         info!("Applying patch in {:?}", self.path);
 
@@ -87,6 +91,9 @@ impl Drop for GitWorktree {
         // We can't easily run async code in Drop.
         // In a real system, we'd have a separate garbage collector or use `git worktree remove` explicitly before drop.
         // For now, we rely on `TempDir` deleting the directory, and `git worktree prune` can be run periodically.
-        warn!("Dropping worktree at {:?}. Remember to run 'git worktree prune'", self.path);
+        warn!(
+            "Dropping worktree at {:?}. Remember to run 'git worktree prune'",
+            self.path
+        );
     }
 }

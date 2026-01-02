@@ -1,7 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use mail_parser::MessageParser;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct Patchset {
     pub message_id: String,
     pub subject: String,
@@ -10,12 +11,14 @@ pub struct Patchset {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct Patch {
     pub message_id: String,
     pub body: String,
     pub diff: String,
 }
 
+#[allow(dead_code)]
 pub fn parse_email(raw_email: &[u8]) -> Result<(Patchset, Option<Patch>)> {
     let message = MessageParser::default()
         .parse(raw_email)
@@ -26,10 +29,7 @@ pub fn parse_email(raw_email: &[u8]) -> Result<(Patchset, Option<Patch>)> {
         .ok_or_else(|| anyhow!("No Message-ID header"))?
         .to_string();
 
-    let subject = message
-        .subject()
-        .unwrap_or("(no subject)")
-        .to_string();
+    let subject = message.subject().unwrap_or("(no subject)").to_string();
 
     let author = message
         .from()
@@ -37,15 +37,9 @@ pub fn parse_email(raw_email: &[u8]) -> Result<(Patchset, Option<Patch>)> {
         .map(|a| a.address().unwrap_or("unknown").to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
-    let date = message
-        .date()
-        .map(|d| d.to_timestamp())
-        .unwrap_or(0);
+    let date = message.date().map(|d| d.to_timestamp()).unwrap_or(0);
 
-    let body = message
-        .body_text(0)
-        .unwrap_or_default()
-        .to_string();
+    let body = message.body_text(0).unwrap_or_default().to_string();
 
     // Simple heuristic: if body contains "diff --git", it's likely a patch
     let diff = if body.contains("diff --git") {

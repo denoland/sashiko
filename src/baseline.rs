@@ -9,12 +9,12 @@ pub struct Baseline {
     pub commit: Option<String>,
 }
 
+#[allow(dead_code)]
 pub fn detect_baseline(subject: &str, body: &str) -> Result<Baseline> {
     // 1. Check for "base-commit: <hash>"
     static BASE_COMMIT_RE: OnceLock<Regex> = OnceLock::new();
-    let base_commit_re = BASE_COMMIT_RE.get_or_init(|| {
-        Regex::new(r"(?m)^base-commit: ([0-9a-f]{40})").expect("Invalid regex")
-    });
+    let base_commit_re = BASE_COMMIT_RE
+        .get_or_init(|| Regex::new(r"(?m)^base-commit: ([0-9a-f]{40})").expect("Invalid regex"));
 
     let commit = base_commit_re
         .captures(body)
