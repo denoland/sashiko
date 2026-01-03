@@ -7,38 +7,43 @@ Sashiko supports an "Offline/Test Mode" that reads from local git clones of mail
 - `git` installed on your system.
 - Sufficient disk space (LKML archives can be tens of gigabytes).
 
-## Finding the Git URL
+## Lore Epochs and Git Layout
 
-`lore.kernel.org` uses [public-inbox](https://public-inbox.org/), which exposes mailing lists as git repositories.
+`lore.kernel.org` (running `public-inbox`) splits large mailing lists into **epochs** (e.g., `0.git`, `1.git`, `2.git`...) to keep repository sizes manageable and performance high. This structure roughly follows standard [git repository layout](https://mirrors.edge.kernel.org/pub/software/scm/git/docs/gitrepository-layout.html) principles where large histories are segmented.
+
+- **Epoch 0 (`0.git`)**: Contains the oldest messages (start of the archive).
+- **Epoch N (`N.git`)**: Contains the newest messages.
+
+Each epoch is a valid **bare** git repository. While they are often linked via `objects/info/alternates` on the server or in full mirrors to share common objects (like blobs), Sashiko treats them as individual sources of data during ingestion.
+
+## Finding the Git URL
 
 1.  Go to [lore.kernel.org](https://lore.kernel.org/).
 2.  Navigate to the list you are interested in (e.g., `LKML`).
-3.  Look for the "mirror" instructions at the bottom or top of the page.
-
-For LKML (Linux Kernel Mailing List), the base URL is:
-`https://lore.kernel.org/lkml/`
+3.  Look for the "mirror" instructions.
 
 ## Cloning the Archive
 
-`public-inbox` repositories are often split into "epochs" (e.g., `0.git`, `1.git`, `2.git`...) to keep repository sizes manageable. However, for many lists, you can clone the unified view or specific epochs.
+### Simple Clone (Latest Messages)
 
-### Simple Clone (Most recent epoch)
+To get the most recent messages, you should clone the **latest epoch**. Sashiko's ingestor automatically attempts to discover and clone the latest epoch if you provide the `--download` flag.
 
-If you only need recent history (e.g., for testing current ingestion), you can clone the main endpoint or the latest epoch. Sashiko's `ingestor.rs` uses the `0.git` endpoint by default.
-
+Manual example for LKML (assuming epoch 18 is latest):
 ```bash
-# Example for LKML (check lore for exact paths)
 # We use --bare as Sashiko treats these as bare repositories.
 mkdir -p archives
 cd archives
-git clone --bare --depth=1000 https://lore.kernel.org/lkml/0.git archives/lkml/0.git
+git clone --bare --depth=1000 https://lore.kernel.org/lkml/18.git archives/lkml/18.git
 ```
 
-*Note: `lore` often suggests using `grokmirror` for full mirrors. The `0.git` endpoint typically refers to the first epoch, but for some lists, it might be the only one. Sashiko currently hardcodes `0.git` for bootstrapping.*
+*Note: The actual URL structure requires checking the `manifest.js.gz` or the website to find the highest number.*
 
 ### Automatic Bootstrapping
 
-Sashiko's ingestor (`src/ingestor.rs`) includes logic to automatically bootstrap these repositories if they are missing. It performs a shallow bare clone of the `0.git` endpoint.
+Sashiko's ingestor (`src/ingestor.rs`) includes logic to:
+1.  Fetch `https://lore.kernel.org/manifest.js.gz`.
+2.  Find the highest numbered epoch for the requested list (e.g., `lkml`).
+3.  Clone that epoch into `archives/<list>/<epoch>.git`.
 
 ### Using Grokmirror (Recommended for Full Mirrors)
 

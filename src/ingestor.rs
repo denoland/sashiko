@@ -179,7 +179,38 @@ impl Ingestor {
                 ));
             }
         } else {
-            // Repo exists, fetch latest
+            // Repo exists, ensure remote is correct then fetch
+            let remote_output = Command::new("git")
+                .arg("-c")
+                .arg("safe.bareRepository=all")
+                .current_dir(path)
+                .arg("remote")
+                .arg("get-url")
+                .arg("origin")
+                .output()
+                .await?;
+
+            if remote_output.status.success() {
+                let current_url = String::from_utf8_lossy(&remote_output.stdout).trim().to_string();
+                if current_url != url {
+                    info!("Updating remote origin from {} to {}", current_url, url);
+                    let set_url_output = Command::new("git")
+                        .arg("-c")
+                        .arg("safe.bareRepository=all")
+                        .current_dir(path)
+                        .arg("remote")
+                        .arg("set-url")
+                        .arg("origin")
+                        .arg(url)
+                        .output()
+                        .await?;
+                    
+                    if !set_url_output.status.success() {
+                         warn!("Failed to update remote url: {}", String::from_utf8_lossy(&set_url_output.stderr));
+                    }
+                }
+            }
+
             info!("Fetching latest changes in {:?} with depth {}", path, n);
             let output = Command::new("git")
                 .arg("-c")
