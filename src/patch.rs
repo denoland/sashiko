@@ -101,13 +101,15 @@ pub fn parse_email(raw_email: &[u8]) -> Result<(PatchsetMetadata, Option<Patch>)
     // Detection logic
     let subject_lower = subject.to_lowercase();
     let is_reply = subject_lower.trim().starts_with("re:");
-    let has_patch_tag = subject_lower.contains("patch");
+    let has_patch_tag = subject_lower.contains("patch") || subject_lower.contains("rfc");
     let has_diff = !diff.is_empty();
+
+    let has_series_marker = total > 1 || (total == 1 && index == 1 && subject.contains("1/1"));
 
     // It is a patch or cover letter if:
     // 1. It is NOT a reply (Re: ...)
-    // 2. AND (It has [PATCH] tag OR contains a diff)
-    let is_patch_or_cover = !is_reply && (has_patch_tag || has_diff);
+    // 2. AND (It has [PATCH]/[RFC] tag OR contains a diff OR looks like a series part)
+    let is_patch_or_cover = !is_reply && (has_patch_tag || has_diff || has_series_marker);
 
     let metadata = PatchsetMetadata {
         message_id: message_id.clone(),
@@ -139,7 +141,8 @@ pub fn parse_email(raw_email: &[u8]) -> Result<(PatchsetMetadata, Option<Patch>)
 
 fn parse_subject_index(subject: &str) -> (u32, u32) {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r"\[PATCH.*?(\d+)/(\d+)\]").unwrap());
+    // Allow [Anything 1/2 Anything]
+    let re = RE.get_or_init(|| Regex::new(r"\[.*?(\d+)/(\d+).*?\]").unwrap());
 
     if let Some(caps) = re.captures(subject) {
         let index = caps.get(1).map_or(1, |m| m.as_str().parse().unwrap_or(1));
@@ -197,5 +200,30 @@ mod tests {
         let raw = b"Message-ID: <abc>\r\nSubject: Re: [PATCH] fix bug\r\n\r\nLGTM";
         let (meta, _) = parse_email(raw).unwrap();
         assert!(!meta.is_patch_or_cover);
+    }
+
+    #[test]
+    fn test_rfc_patch_parsing() {
+        let subject = "[RFC PATCH 1/3] My RFC";
+        let (index, total) = parse_subject_index(subject);
+        assert_eq!(index, 1);
+        assert_eq!(total, 3);
+    }
+
+    #[test]
+    fn test_complex_prefix_parsing() {
+        let subject = "[PATCH v2 net-next 02/14] Something";
+        let (index, total) = parse_subject_index(subject);
+        assert_eq!(index, 2);
+        assert_eq!(total, 14);
+    }
+
+    #[test]
+    fn test_no_patch_prefix_parsing() {
+        // Some lists might just use [RFC 1/2]
+        let subject = "[RFC 1/2] Just RFC";
+        let (index, total) = parse_subject_index(subject);
+        assert_eq!(index, 1);
+        assert_eq!(total, 2);
     }
 }
