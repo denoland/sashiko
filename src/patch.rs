@@ -158,13 +158,19 @@ fn parse_subject_index(subject: &str) -> (u32, u32) {
 
 pub fn parse_subject_version(subject: &str) -> Option<u32> {
     static RE_VER: OnceLock<Regex> = OnceLock::new();
-    // Match [PATCH v2 ...] or [PATCH ... v2]
-    // We look for " v(\d+) " or " v(\d+)]" or " v(\d+)/"
-    // Actually, simple \[.*?v(\d+).*?\] might match "dev" in "device".
-    // We want word boundary or specific format.
-    // Usually it is " v2 " or "-v2" or space before v.
-    // Let's try flexible but safe: ` v(\d+)[^a-z]`
-    let re = RE_VER.get_or_init(|| Regex::new(r"(?:^|[ \[(\/-])v(\d+)(?:[ \])\/)]|$)").unwrap());
+    // Match version patterns like:
+    // - [PATCH v2] ... (Standard)
+    // - [PATCH V2] ... (Uppercase)
+    // - [PATCHv2] ... (Attached)
+    // - [RFC v2] ... (RFC)
+    // - v3 PATCH ... (Start)
+    // - ... v4] (End)
+    // Avoid false positives like "dev" or "device".
+    // Strategy:
+    // Prefix: Start of string (^), non-alphanumeric char ([^a-z0-9]), or literal "PATCH" (for PATCHvN)
+    // Body: v or V followed by digits
+    // Suffix: End of string ($) or non-alphanumeric char
+    let re = RE_VER.get_or_init(|| Regex::new(r"(?i)(?:^|[^a-z0-9]|PATCH)v(\d+)(?:[^a-z0-9]|$)").unwrap());
 
     if let Some(caps) = re.captures(subject) {
         caps.get(1).and_then(|m| m.as_str().parse().ok())
@@ -241,6 +247,14 @@ mod tests {
         assert_eq!(parse_subject_version("Subject with devicetree"), None); // 'dev' should not match
         assert_eq!(parse_subject_version("[PATCH 0/10]"), None); // 0/10 is not version
         assert_eq!(parse_subject_version("[PATCH v12]"), Some(12));
+
+        // New cases from analysis
+        assert_eq!(parse_subject_version("[PATCH V2 13/13]"), Some(2)); // Uppercase V
+        assert_eq!(parse_subject_version("[PATCH bpf-next v5 10/10]"), Some(5)); // Subsystem prefix
+        assert_eq!(parse_subject_version("[PATCH RFC v2 8/8]"), Some(2)); // RFC + Version
+        assert_eq!(parse_subject_version("[PATCHv5 2/2]"), Some(5)); // Attached version
+        assert_eq!(parse_subject_version("[PATCH 00/33 v6]"), Some(6)); // Version at end
+        assert_eq!(parse_subject_version("[v3 PATCH 1/1]"), Some(3)); // Version at start
     }
 
     #[test]
