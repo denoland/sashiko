@@ -140,6 +140,7 @@ impl Database {
         Ok(thread_id)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_message(
         &self,
         message_id: &str,
@@ -300,8 +301,8 @@ impl Database {
             let mut current_subject_index = matches[0].1;
 
             // If we have multiple matches, merge others into target_id
-            for i in 1..matches.len() {
-                let merge_from_id = matches[i].0;
+            for (merge_from_id, merge_subject_index) in matches.iter().skip(1) {
+                let merge_from_id = *merge_from_id;
                 info!("Merging patchset {} into {}", merge_from_id, target_id);
                 
                 // Reassign patches
@@ -311,8 +312,8 @@ impl Database {
                 ).await?;
                 
                 // If the merged patchset had a better subject index, track it
-                if matches[i].1 < current_subject_index {
-                    current_subject_index = matches[i].1;
+                if *merge_subject_index < current_subject_index {
+                    current_subject_index = *merge_subject_index;
                 }
 
                 // Delete the merged patchset
