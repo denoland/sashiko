@@ -105,9 +105,9 @@ pub fn parse_email(raw_email: &[u8]) -> Result<(PatchsetMetadata, Option<Patch>)
     let has_diff = !diff.is_empty();
 
     // It is a patch or cover letter if:
-    // 1. It has [PATCH] tag AND is NOT a reply (Re: ...)
-    // 2. OR it contains a diff (regardless of subject, though rare for non-patches)
-    let is_patch_or_cover = (has_patch_tag && !is_reply) || has_diff;
+    // 1. It is NOT a reply (Re: ...)
+    // 2. AND (It has [PATCH] tag OR contains a diff)
+    let is_patch_or_cover = !is_reply && (has_patch_tag || has_diff);
 
     let metadata = PatchsetMetadata {
         message_id: message_id.clone(),
@@ -165,5 +165,37 @@ mod tests {
             b"Message-ID: <456>\r\nFrom: test2@example.com\r\nSubject: Test\r\n\r\nBody";
         let (meta2, _) = parse_email(raw_no_name).unwrap();
         assert_eq!(meta2.author, "test2@example.com");
+    }
+
+    #[test]
+    fn test_reply_with_diff_is_not_patchset() {
+        // A message that starts with Re: but contains diff --git
+        // This simulates a reply quoting a patch or sending an inline fixup
+        let raw = b"Message-ID: <123>\r\nSubject: Re: [PATCH] fix bug\r\n\r\n> diff --git a/file b/file\n> index...";
+        let (meta, _) = parse_email(raw).unwrap();
+        
+        // This fails with current logic because has_diff is true
+        assert!(!meta.is_patch_or_cover, "Reply with diff should NOT be a patchset");
+    }
+
+    #[test]
+    fn test_normal_patch() {
+        let raw = b"Message-ID: <456>\r\nSubject: [PATCH] fix bug\r\n\r\ndiff --git a/file b/file\nindex...";
+        let (meta, _) = parse_email(raw).unwrap();
+        assert!(meta.is_patch_or_cover);
+    }
+    
+    #[test]
+    fn test_cover_letter() {
+        let raw = b"Message-ID: <789>\r\nSubject: [PATCH 0/5] fix bug\r\n\r\nCover letter body";
+        let (meta, _) = parse_email(raw).unwrap();
+        assert!(meta.is_patch_or_cover);
+    }
+
+    #[test]
+    fn test_pure_reply() {
+        let raw = b"Message-ID: <abc>\r\nSubject: Re: [PATCH] fix bug\r\n\r\nLGTM";
+        let (meta, _) = parse_email(raw).unwrap();
+        assert!(!meta.is_patch_or_cover);
     }
 }
