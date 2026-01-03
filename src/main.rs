@@ -200,6 +200,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         &metadata.to,
                                         &metadata.cc,
                                         baseline_id,
+                                        metadata.version,
                                     )
                                     .await
                                 {

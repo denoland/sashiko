@@ -172,12 +172,13 @@ impl Database {
         to: &str,
         cc: &str,
         baseline_id: Option<i64>,
+        version: Option<u32>,
     ) -> Result<i64> {
         // Find candidate patchsets in this thread
         let mut rows = self
             .conn
             .query(
-                "SELECT id, date, author FROM patchsets WHERE thread_id = ?",
+                "SELECT id, date, author, subject FROM patchsets WHERE thread_id = ?",
                 libsql::params![thread_id],
             )
             .await?;
@@ -188,11 +189,19 @@ impl Database {
             let id: i64 = row.get(0)?;
             let existing_date: i64 = row.get(1)?;
             let existing_author: String = row.get(2)?;
+            let existing_subject: String = row.get(3)?;
+
+            // Parse version from existing subject
+            let existing_version = crate::patch::parse_subject_version(&existing_subject);
+            
+            let v_new = version.unwrap_or(1);
+            let v_old = existing_version.unwrap_or(1);
 
             // Matching logic:
             // 1. Author must match (patches in a set are from same person)
             // 2. Time must be close (within 15 mins / 900s)
-            if existing_author == author && (date - existing_date).abs() < 900 {
+            // 3. Versions must match (v1 vs v2 are different patchsets)
+            if existing_author == author && (date - existing_date).abs() < 900 && v_new == v_old {
                 matched_id = Some(id);
                 break;
             }
@@ -425,30 +434,40 @@ mod tests {
         // Create a thread
         let thread_id = db.create_thread("root", "Test Thread", 1000).await.unwrap();
 
-        // 1. Create first patchset (Author A, Time 1000)
+        // 1. Create first patchset (Author A, Time 1000, v1)
         let ps1 = db.create_patchset(
-            thread_id, None, "Patchset 1", "Author A", 1000, 2, 1, "to", "cc", None
+            thread_id, None, "Patchset 1", "Author A", 1000, 2, 1, "to", "cc", None, Some(1)
         ).await.unwrap();
 
-        // 2. Add another patch to same patchset (Author A, Time 1005 - within 15 mins)
+        // 2. Add another patch to same patchset (Author A, Time 1005, v1)
         // Should return same ID
         let ps1_update = db.create_patchset(
-            thread_id, None, "Patchset 1", "Author A", 1005, 2, 1, "to", "cc", None
+            thread_id, None, "Patchset 1", "Author A", 1005, 2, 1, "to", "cc", None, Some(1)
         ).await.unwrap();
         assert_eq!(ps1, ps1_update, "Should match existing patchset based on author and time");
 
         // 3. Create NEW patchset in same thread (Author A, Time 2000 - > 15 mins later)
         // Should create new ID
         let ps2 = db.create_patchset(
-            thread_id, None, "Patchset 2", "Author A", 2000, 2, 1, "to", "cc", None
+            thread_id, None, "Patchset 2", "Author A", 2000, 2, 1, "to", "cc", None, Some(1)
         ).await.unwrap();
         assert_ne!(ps1, ps2, "Should create new patchset for later time");
 
         // 4. Create NEW patchset in same thread (Author B, Time 1000 - same time but diff author)
         // Should create new ID
         let ps3 = db.create_patchset(
-            thread_id, None, "Patchset 3", "Author B", 1000, 2, 1, "to", "cc", None
+            thread_id, None, "Patchset 3", "Author B", 1000, 2, 1, "to", "cc", None, Some(1)
         ).await.unwrap();
         assert_ne!(ps1, ps3, "Should create new patchset for different author");
+
+        // 5. Create NEW patchset v2 (Author A, Time 1002 - close time, but v2)
+        // Note: We simulate subject containing "v2" implicitly by passing version=Some(2)
+        // AND we must ensure subject is stored so parsing works.
+        // Wait, the logic parses subject from DB. So ps1 subject "Patchset 1" implies v1 (default).
+        // Here we pass "Patchset v2" as subject.
+        let ps_v2 = db.create_patchset(
+            thread_id, None, "[PATCH v2] Patchset 1", "Author A", 1002, 2, 1, "to", "cc", None, Some(2)
+        ).await.unwrap();
+        assert_ne!(ps1, ps_v2, "Should create new patchset for v2 despite close time");
     }
 }

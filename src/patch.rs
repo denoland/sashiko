@@ -17,6 +17,7 @@ pub struct PatchsetMetadata {
     pub to: String,
     pub cc: String,
     pub is_patch_or_cover: bool,
+    pub version: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -89,6 +90,7 @@ pub fn parse_email(raw_email: &[u8]) -> Result<(PatchsetMetadata, Option<Patch>)
     };
 
     let (index, total) = parse_subject_index(&subject);
+    let version = parse_subject_version(&subject);
 
     let body = message.body_text(0).unwrap_or_default().to_string();
 
@@ -123,6 +125,7 @@ pub fn parse_email(raw_email: &[u8]) -> Result<(PatchsetMetadata, Option<Patch>)
         to,
         cc,
         is_patch_or_cover,
+        version,
     };
 
     let patch = if has_diff {
@@ -150,6 +153,23 @@ fn parse_subject_index(subject: &str) -> (u32, u32) {
         (index, total)
     } else {
         (1, 1)
+    }
+}
+
+pub fn parse_subject_version(subject: &str) -> Option<u32> {
+    static RE_VER: OnceLock<Regex> = OnceLock::new();
+    // Match [PATCH v2 ...] or [PATCH ... v2]
+    // We look for " v(\d+) " or " v(\d+)]" or " v(\d+)/"
+    // Actually, simple \[.*?v(\d+).*?\] might match "dev" in "device".
+    // We want word boundary or specific format.
+    // Usually it is " v2 " or "-v2" or space before v.
+    // Let's try flexible but safe: ` v(\d+)[^a-z]`
+    let re = RE_VER.get_or_init(|| Regex::new(r"(?:^|[ \[(\/-])v(\d+)(?:[ \])\/)]|$)").unwrap());
+
+    if let Some(caps) = re.captures(subject) {
+        caps.get(1).and_then(|m| m.as_str().parse().ok())
+    } else {
+        None
     }
 }
 
