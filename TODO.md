@@ -24,7 +24,7 @@
 - [ ] Support parsing patches from email attachments.
 
 ## Phase 2.5: Performance Optimization
-- [ ] **Task**: Implement Transactional Batching (group DB writes to reduce I/O).
+- [x] **Task**: Implement Transactional Batching (group DB writes to reduce I/O).
 - [ ] **Task**: Implement Decoupled Parallel Parsing (separate parsing from DB writes).
 - [ ] **Task**: Implement Git-Backed Content Storage (store hashes, read from git, reduce DB size).
 
