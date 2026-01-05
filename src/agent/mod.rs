@@ -1,5 +1,7 @@
 pub mod prompts;
 pub mod tools;
+#[cfg(test)]
+mod tools_test;
 
 use crate::agent::prompts::PromptRegistry;
 use crate::agent::tools::ToolBox;
