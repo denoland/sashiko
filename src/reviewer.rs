@@ -1,16 +1,16 @@
+use crate::baseline::{BaselineRegistry, BaselineResolution, extract_files_from_diff};
+use crate::db::Database;
+use crate::git_ops::{ensure_remote, get_commit_hash};
+use crate::settings::Settings;
 use anyhow::Result;
+use serde_json::json;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::Arc;
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::sync::Semaphore;
-use tracing::{info, error, warn};
-use crate::db::Database;
-use crate::settings::Settings;
-use crate::baseline::{BaselineRegistry, extract_files_from_diff, BaselineResolution};
-use crate::git_ops::{ensure_remote, get_commit_hash};
-use serde_json::json;
-use std::process::Stdio;
-use tokio::io::AsyncWriteExt;
+use tracing::{error, info, warn};
 
 pub struct Reviewer {
     db: Arc<Database>,
@@ -23,14 +23,17 @@ impl Reviewer {
     pub fn new(db: Arc<Database>, settings: Settings) -> Self {
         let concurrency = settings.review.concurrency;
         let repo_path = PathBuf::from(&settings.git.repository_path);
-        
+
         let baseline_registry = match BaselineRegistry::new(&repo_path) {
             Ok(r) => Arc::new(r),
             Err(e) => {
-                error!("Failed to initialize BaselineRegistry: {}. Using empty registry.", e);
-                Arc::new(BaselineRegistry::new(&repo_path).unwrap_or_else(|_| 
+                error!(
+                    "Failed to initialize BaselineRegistry: {}. Using empty registry.",
+                    e
+                );
+                Arc::new(BaselineRegistry::new(&repo_path).unwrap_or_else(|_| {
                     panic!("Critical error initializing BaselineRegistry: {}", e)
-                ))
+                }))
             }
         };
 
@@ -43,11 +46,17 @@ impl Reviewer {
     }
 
     pub async fn start(&self) {
-        info!("Starting Reviewer service with concurrency limit: {}", self.settings.review.concurrency);
-        
+        info!(
+            "Starting Reviewer service with concurrency limit: {}",
+            self.settings.review.concurrency
+        );
+
         let worktree_dir = PathBuf::from(&self.settings.review.worktree_dir);
         if worktree_dir.exists() {
-            info!("Cleaning up previous worktree directory: {:?}", worktree_dir);
+            info!(
+                "Cleaning up previous worktree directory: {:?}",
+                worktree_dir
+            );
             if let Err(e) = std::fs::remove_dir_all(&worktree_dir) {
                 error!("Failed to cleanup worktree directory: {}", e);
             }
@@ -61,13 +70,13 @@ impl Reviewer {
                 if count > 0 {
                     info!("Recovered {} interrupted reviews (reset to Pending)", count);
                 }
-            },
+            }
             Err(e) => error!("Failed to reset reviewing status: {}", e),
         }
 
         loop {
             match self.process_pending_patchsets().await {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => error!("Error in reviewer loop: {}", e),
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
@@ -93,11 +102,14 @@ impl Reviewer {
 
             tokio::spawn(async move {
                 let _permit = permit;
-                
+
                 info!("Starting review for patchset {}", patchset_id);
-                
+
                 if let Err(e) = db.update_patchset_status(patchset_id, "Reviewing").await {
-                    error!("Failed to update status to Reviewing for {}: {}", patchset_id, e);
+                    error!(
+                        "Failed to update status to Reviewing for {}: {}",
+                        patchset_id, e
+                    );
                     return;
                 }
 
@@ -110,9 +122,10 @@ impl Reviewer {
                     }
                 };
 
-                let patches_json: Vec<_> = diffs.into_iter().map(|(idx, diff)| {
-                    json!({ "index": idx, "diff": diff })
-                }).collect();
+                let patches_json: Vec<_> = diffs
+                    .into_iter()
+                    .map(|(idx, diff)| json!({ "index": idx, "diff": diff }))
+                    .collect();
 
                 let input_payload = json!({
                     "id": patchset_id,
@@ -128,18 +141,23 @@ impl Reviewer {
                         all_files.extend(files);
                     }
                 }
-                
+
                 // Fetch body for base-commit detection
                 let body = if let Some(mid) = &patchset.message_id {
                     db.get_message_body(mid).await.unwrap_or(None)
-                } else if let Some(first_patch_msg_id) = patches_json.first().and_then(|p| p["message_id"].as_str()) {
-                    db.get_message_body(first_patch_msg_id).await.unwrap_or(None)
+                } else if let Some(first_patch_msg_id) =
+                    patches_json.first().and_then(|p| p["message_id"].as_str())
+                {
+                    db.get_message_body(first_patch_msg_id)
+                        .await
+                        .unwrap_or(None)
                 } else {
                     None
                 };
 
-                let candidates = baseline_registry.resolve_candidates(&all_files, &subject, body.as_deref());
-                
+                let candidates =
+                    baseline_registry.resolve_candidates(&all_files, &subject, body.as_deref());
+
                 let mut final_status = "Failed".to_string();
                 let repo_path = PathBuf::from(&settings.git.repository_path);
 
@@ -148,17 +166,23 @@ impl Reviewer {
                         BaselineResolution::Commit(h) => {
                             info!("Using base-commit for {}: {}", patchset_id, h);
                             (h, Option::<(String, String)>::None, Option::<String>::None)
-                        },
+                        }
                         BaselineResolution::LocalRef(r) => {
                             info!("Using local baseline for {}: {}", patchset_id, r);
                             (r, Option::<(String, String)>::None, Option::<String>::None)
-                        },
+                        }
                         BaselineResolution::RemoteTarget { url, name } => {
-                            info!("Fetching remote baseline for {}: {} ({})", patchset_id, name, url);
+                            info!(
+                                "Fetching remote baseline for {}: {} ({})",
+                                patchset_id, name, url
+                            );
                             match ensure_remote(&repo_path, &name, &url, false).await {
                                 Ok(_) => (format!("{}/master", name), Some((url, name)), None),
                                 Err(e) => {
-                                    let msg = format!("Failed to fetch remote {}: {}. Skipping candidate.", url, e);
+                                    let msg = format!(
+                                        "Failed to fetch remote {}: {}. Skipping candidate.",
+                                        url, e
+                                    );
                                     error!("{}", msg);
                                     // Skip this candidate if fetch failed
                                     // We still record the attempt?
@@ -166,16 +190,19 @@ impl Reviewer {
                                     // But to run the tool we need a baseline.
                                     // If fetch failed, we can't use this candidate.
                                     // Let's create a record saying "Fetch Failed" and continue.
-                                    
+
                                     // Record skipped experiment
-                                    if let Err(e) = db.create_review_experiment(
-                                        patchset_id,
-                                        &settings.ai.provider,
-                                        &settings.ai.model,
-                                        None, // No prompts hash needed for fetch failure
-                                        None, // No baseline ID
-                                        &msg
-                                    ).await {
+                                    if let Err(e) = db
+                                        .create_review_experiment(
+                                            patchset_id,
+                                            &settings.ai.provider,
+                                            &settings.ai.model,
+                                            None, // No prompts hash needed for fetch failure
+                                            None, // No baseline ID
+                                            &msg,
+                                        )
+                                        .await
+                                    {
                                         error!("Failed to record fetch failure: {}", e);
                                     }
                                     continue;
@@ -184,21 +211,33 @@ impl Reviewer {
                         }
                     };
 
-                    let prompts_hash = get_commit_hash(Path::new("review-prompts"), "HEAD").await.ok();
+                    let prompts_hash = get_commit_hash(Path::new("review-prompts"), "HEAD")
+                        .await
+                        .ok();
                     let baseline_commit = get_commit_hash(&repo_path, &baseline_ref).await.ok();
-                    
+
                     let baseline_id = if let Some(commit) = &baseline_commit {
                         let (repo_url, branch) = if let Some((u, _)) = &remote_info {
                             (Some(u.as_str()), Some(baseline_ref.as_str()))
                         } else {
                             (None, Some(baseline_ref.as_str()))
                         };
-                        db.create_baseline(repo_url, branch, Some(commit)).await.ok()
+                        db.create_baseline(repo_url, branch, Some(commit))
+                            .await
+                            .ok()
                     } else {
                         None
                     };
 
-                    let (mut status, mut description) = match run_review_tool(patchset_id, &input_payload, &settings, db.clone(), &baseline_ref).await {
+                    let (mut status, mut description) = match run_review_tool(
+                        patchset_id,
+                        &input_payload,
+                        &settings,
+                        db.clone(),
+                        &baseline_ref,
+                    )
+                    .await
+                    {
                         Ok(r) => r,
                         Err(e) => {
                             error!("Review execution failed for {}: {}", patchset_id, e);
@@ -213,16 +252,28 @@ impl Reviewer {
                     // Retry logic (only for RemoteTarget failure)
                     if status == "Failed" {
                         if let Some((url, name)) = remote_info {
-                            info!("Patchset {} failed with remote baseline. Forcing fetch and retrying...", patchset_id);
-                            if let Ok(_) = ensure_remote(&repo_path, &name, &url, true).await {
-                                match run_review_tool(patchset_id, &input_payload, &settings, db.clone(), &baseline_ref).await {
+                            info!(
+                                "Patchset {} failed with remote baseline. Forcing fetch and retrying...",
+                                patchset_id
+                            );
+                            if ensure_remote(&repo_path, &name, &url, true).await.is_ok() {
+                                match run_review_tool(
+                                    patchset_id,
+                                    &input_payload,
+                                    &settings,
+                                    db.clone(),
+                                    &baseline_ref,
+                                )
+                                .await
+                                {
                                     Ok((s, d)) => {
                                         info!("Retry result for {}: {}", patchset_id, s);
                                         status = s;
                                         description = d;
-                                    },
+                                    }
                                     Err(e) => {
-                                        description = format!("{} [Retry error: {}]", description, e);
+                                        description =
+                                            format!("{} [Retry error: {}]", description, e);
                                     }
                                 }
                             }
@@ -230,15 +281,21 @@ impl Reviewer {
                     }
 
                     // Record Experiment
-                    if let Err(e) = db.create_review_experiment(
-                        patchset_id,
-                        &settings.ai.provider,
-                        &settings.ai.model,
-                        prompts_hash.as_deref(),
-                        baseline_id,
-                        &description
-                    ).await {
-                        error!("Failed to record review experiment for {}: {}", patchset_id, e);
+                    if let Err(e) = db
+                        .create_review_experiment(
+                            patchset_id,
+                            &settings.ai.provider,
+                            &settings.ai.model,
+                            prompts_hash.as_deref(),
+                            baseline_id,
+                            &description,
+                        )
+                        .await
+                    {
+                        error!(
+                            "Failed to record review experiment for {}: {}",
+                            patchset_id, e
+                        );
                     }
 
                     if status == "Applied" {
@@ -247,7 +304,10 @@ impl Reviewer {
                     }
                 }
 
-                info!("Review process finished for {}: {}", patchset_id, final_status);
+                info!(
+                    "Review process finished for {}: {}",
+                    patchset_id, final_status
+                );
                 if let Err(e) = db.update_patchset_status(patchset_id, &final_status).await {
                     error!("Failed to update status for {}: {}", patchset_id, e);
                 }
@@ -258,24 +318,37 @@ impl Reviewer {
     }
 }
 
-async fn run_review_tool(patchset_id: i64, input_payload: &serde_json::Value, settings: &Settings, db: Arc<Database>, baseline: &str) -> Result<(String, String)> {
+async fn run_review_tool(
+    patchset_id: i64,
+    input_payload: &serde_json::Value,
+    settings: &Settings,
+    db: Arc<Database>,
+    baseline: &str,
+) -> Result<(String, String)> {
     let exe_path = std::env::current_exe()?;
-    let bin_dir = exe_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let bin_dir = exe_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
     let review_bin = bin_dir.join("review");
 
     let mut cmd = if review_bin.exists() {
         Command::new(review_bin)
     } else {
-        warn!("Could not find review binary at {:?}, falling back to cargo run", review_bin);
+        warn!(
+            "Could not find review binary at {:?}, falling back to cargo run",
+            review_bin
+        );
         let mut c = Command::new("cargo");
         c.args(["run", "--bin", "review", "--"]);
         c
     };
 
     cmd.args([
-        "--json", 
-        "--baseline", baseline, 
-        "--worktree-dir", &settings.review.worktree_dir,
+        "--json",
+        "--baseline",
+        baseline,
+        "--worktree-dir",
+        &settings.review.worktree_dir,
     ]);
 
     cmd.stdin(Stdio::piped());
@@ -293,34 +366,53 @@ async fn run_review_tool(patchset_id: i64, input_payload: &serde_json::Value, se
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        warn!("Review tool failed (exit code {:?}): {}", output.status.code(), stderr);
+        warn!(
+            "Review tool failed (exit code {:?}): {}",
+            output.status.code(),
+            stderr
+        );
         return Ok(("Failed".to_string(), format!("Tool failure: {}", stderr)));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    
+
     let json: serde_json::Value = serde_json::from_str(&stdout)?;
-    let patches = json["patches"].as_array().ok_or_else(|| anyhow::anyhow!("Invalid output JSON: no patches"))?;
-    
+    let patches = json["patches"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("Invalid output JSON: no patches"))?;
+
     // Update DB
     for p in patches {
         let idx = p["index"].as_i64().unwrap_or(0);
         let status = p["status"].as_str().unwrap_or("error");
         let stderr = p["stderr"].as_str();
-        
-        if let Err(e) = db.update_patch_application_status(patchset_id, idx, status, stderr).await {
-             error!("Failed to update patch status for ps={} idx={}: {}", patchset_id, idx, e);
+
+        if let Err(e) = db
+            .update_patch_application_status(patchset_id, idx, status, stderr)
+            .await
+        {
+            error!(
+                "Failed to update patch status for ps={} idx={}: {}",
+                patchset_id, idx, e
+            );
         }
     }
 
     let all_applied = patches.iter().all(|p| p["status"] == "applied");
 
     if all_applied {
-        Ok(("Applied".to_string(), "All patches applied successfully.".to_string()))
+        Ok((
+            "Applied".to_string(),
+            "All patches applied successfully.".to_string(),
+        ))
     } else {
         let mut errors = Vec::new();
         for p in patches.iter().filter(|p| p["status"] == "failed").take(3) {
-            let msg = format!("Patch {} failed: {}", p["index"], p["stderr"].as_str().unwrap_or(""));
+            let msg = format!(
+                "Patch {} failed: {}",
+                p["index"],
+                p["stderr"].as_str().unwrap_or("")
+            );
             warn!("{}", msg);
             errors.push(msg);
         }

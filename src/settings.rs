@@ -21,7 +21,7 @@ pub struct NntpSettings {
 pub struct AiSettings {
     pub provider: String,
     pub model: String,
-    pub api_key: String,
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

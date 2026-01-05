@@ -1,8 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::env;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -86,27 +85,24 @@ pub struct GeminiClient {
 }
 
 impl GeminiClient {
-    pub fn new(model: String) -> Result<Self> {
-        let api_key = env::var("GEMINI_API_KEY").context("GEMINI_API_KEY must be set")?;
-        Ok(Self {
+    pub fn new(model: String, api_key: String) -> Self {
+        Self {
             api_key,
             model,
             client: Client::new(),
-        })
+        }
     }
 
-    pub async fn generate_content(&self, request: GenerateContentRequest) -> Result<GenerateContentResponse> {
+    pub async fn generate_content(
+        &self,
+        request: GenerateContentRequest,
+    ) -> Result<GenerateContentResponse> {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
             self.model, self.api_key
         );
 
-        let res = self
-            .client
-            .post(&url)
-            .json(&request)
-            .send()
-            .await?;
+        let res = self.client.post(&url).json(&request).send().await?;
 
         if !res.status().is_success() {
             let error_text = res.text().await?;
