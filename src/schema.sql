@@ -52,13 +52,11 @@ CREATE TABLE IF NOT EXISTS patchsets (
     total_parts INTEGER,
     received_parts INTEGER,
     subject_index INTEGER DEFAULT 9999,
-    baseline_id INTEGER,
     parser_version INTEGER DEFAULT 0,
     to_recipients TEXT,
     cc_recipients TEXT,
     FOREIGN KEY(thread_id) REFERENCES threads(id),
-    FOREIGN KEY(cover_letter_message_id) REFERENCES messages(message_id),
-    FOREIGN KEY(baseline_id) REFERENCES baselines(id)
+    FOREIGN KEY(cover_letter_message_id) REFERENCES messages(message_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_patchsets_status ON patchsets(status);
@@ -80,8 +78,10 @@ CREATE TABLE IF NOT EXISTS reviews (
     summary TEXT,
     created_at INTEGER,
     interaction_id TEXT,
+    baseline_id INTEGER,
     FOREIGN KEY(patchset_id) REFERENCES patchsets(id),
-    FOREIGN KEY(interaction_id) REFERENCES ai_interactions(id)
+    FOREIGN KEY(interaction_id) REFERENCES ai_interactions(id),
+    FOREIGN KEY(baseline_id) REFERENCES baselines(id)
 );
 
 CREATE TABLE IF NOT EXISTS comments (

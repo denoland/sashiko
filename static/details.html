@@ -63,8 +63,8 @@
                         <thead>
                             <tr>
                                 <th>Model</th>
+                                <th>Baseline</th>
                                 <th>Summary</th>
-                                <th>Status</th>
                                 <th>Date</th>
                                 <th>Links</th>
                             </tr>
@@ -74,11 +74,21 @@
                                 const rDate = r.created_at ? new Date(r.created_at * 1000).toLocaleString() : '-';
                                 const inputLink = r.input ? `<a href="data:text/plain;charset=utf-8,${encodeURIComponent(r.input)}" target="_blank">Input</a>` : '-';
                                 const outputLink = r.output ? `<a href="data:text/plain;charset=utf-8,${encodeURIComponent(r.output)}" target="_blank">Result</a>` : '-';
+                                
+                                let baselineStr = '-';
+                                if (r.baseline) {
+                                    const parts = [];
+                                    if (r.baseline.repo_url) parts.push(r.baseline.repo_url);
+                                    if (r.baseline.branch) parts.push(r.baseline.branch);
+                                    if (r.baseline.commit) parts.push(r.baseline.commit.substring(0, 8));
+                                    baselineStr = parts.join('<br>');
+                                }
+
                                 return `
                                     <tr>
                                         <td>${r.model || 'Unknown'}</td>
+                                        <td>${baselineStr}</td>
                                         <td>${r.summary || '-'}</td>
-                                        <td>-</td> 
                                         <td>${rDate}</td>
                                         <td>${inputLink} | ${outputLink}</td>
                                     </tr>
@@ -168,12 +178,6 @@
                 threadHtml = '<p>No thread history found.</p>';
             }
 
-            const baselineHtml = data.baseline ? `
-                <div class="kv"><div class="label">Repo URL:</div><div>${data.baseline.repo_url || '-'}</div></div>
-                <div class="kv"><div class="label">Branch:</div><div>${data.baseline.branch || '-'}</div></div>
-                <div class="kv"><div class="label">Commit:</div><div>${data.baseline.commit || '-'}</div></div>
-            ` : '<p>Baseline not detected.</p>';
-
             document.getElementById('content').innerHTML = `
                 <div class="section">
                     <h2>Metadata</h2>
@@ -183,11 +187,6 @@
                     <div class="kv"><div class="label">Status:</div><div class="status-${data.status}">${data.status || 'Pending'}</div></div>
                     <div class="kv"><div class="label">Progress:</div><div>${data.received_parts || 0} / ${data.total_parts || 0}</div></div>
                     ${patchesHtml}
-                </div>
-
-                <div class="section">
-                    <h2>Git Baseline</h2>
-                    ${baselineHtml}
                 </div>
 
                 <div class="section">

@@ -494,7 +494,6 @@ impl Database {
         parser_version: i32,
         to: &str,
         cc: &str,
-        baseline_id: Option<i64>,
         version: Option<u32>,
         part_index: u32,
     ) -> Result<Option<i64>> {
@@ -623,8 +622,8 @@ impl Database {
 
             // Update the target patchset
             self.conn.execute(
-                "UPDATE patchsets SET author = ?, total_parts = ?, parser_version = ?, to_recipients = ?, cc_recipients = ?, baseline_id = ? WHERE id = ?",
-                libsql::params![author, total_parts, parser_version, to, cc, baseline_id, target_id],
+                "UPDATE patchsets SET author = ?, total_parts = ?, parser_version = ?, to_recipients = ?, cc_recipients = ? WHERE id = ?",
+                libsql::params![author, total_parts, parser_version, to, cc, target_id],
             ).await?;
 
             // Conditionally update subject
@@ -672,9 +671,9 @@ impl Database {
         // No match found, create new patchset
         self.conn
             .execute(
-                "INSERT INTO patchsets (thread_id, cover_letter_message_id, subject, author, date, total_parts, received_parts, status, parser_version, to_recipients, cc_recipients, baseline_id, subject_index) 
-                 VALUES (?, ?, ?, ?, ?, ?, 0, 'Incomplete', ?, ?, ?, ?, ?)",
-                libsql::params![thread_id, cover_letter_message_id, subject, author, date, total_parts, parser_version, to, cc, baseline_id, part_index],
+                "INSERT INTO patchsets (thread_id, cover_letter_message_id, subject, author, date, total_parts, received_parts, status, parser_version, to_recipients, cc_recipients, subject_index) 
+                 VALUES (?, ?, ?, ?, ?, ?, 0, 'Incomplete', ?, ?, ?, ?)",
+                libsql::params![thread_id, cover_letter_message_id, subject, author, date, total_parts, parser_version, to, cc, part_index],
             )
             .await?;
 
@@ -932,10 +931,9 @@ impl Database {
     pub async fn get_patchset_details(&self, id: i64) -> Result<Option<serde_json::Value>> {
         let mut rows = self.conn.query(
             "SELECT p.id, p.subject, p.status, p.to_recipients, p.cc_recipients, 
-                    b.repo_url, b.branch, b.last_known_commit, p.author, p.date, p.cover_letter_message_id, p.thread_id,
+                    p.author, p.date, p.cover_letter_message_id, p.thread_id,
                     p.total_parts, p.received_parts
              FROM patchsets p 
-             LEFT JOIN baselines b ON p.baseline_id = b.id
              WHERE p.id = ?",
             libsql::params![id],
         ).await?;
@@ -946,24 +944,22 @@ impl Database {
             let status: Option<String> = row.get(2).ok();
             let to: Option<String> = row.get(3).ok();
             let cc: Option<String> = row.get(4).ok();
-            let repo_url: Option<String> = row.get(5).ok();
-            let branch: Option<String> = row.get(6).ok();
-            let commit: Option<String> = row.get(7).ok();
-            let author: Option<String> = row.get(8).ok();
-            let date: Option<i64> = row.get(9).ok();
-            let mid: Option<String> = row.get(10).ok();
-            let thread_id: Option<i64> = row.get(11).ok();
-            let total_parts: Option<u32> = row.get(12).ok();
-            let received_parts: Option<u32> = row.get(13).ok();
+            let author: Option<String> = row.get(5).ok();
+            let date: Option<i64> = row.get(6).ok();
+            let mid: Option<String> = row.get(7).ok();
+            let thread_id: Option<i64> = row.get(8).ok();
+            let total_parts: Option<u32> = row.get(9).ok();
+            let received_parts: Option<u32> = row.get(10).ok();
 
             // Fetch reviews
             let mut reviews = Vec::new();
             let mut rev_rows = self
                 .conn
                 .query(
-                    "SELECT r.model_name, r.summary, r.created_at, ai.input_context, ai.output_raw
+                    "SELECT r.model_name, r.summary, r.created_at, ai.input_context, ai.output_raw, b.repo_url, b.branch, b.last_known_commit
                  FROM reviews r
                  LEFT JOIN ai_interactions ai ON r.interaction_id = ai.id
+                 LEFT JOIN baselines b ON r.baseline_id = b.id
                  WHERE r.patchset_id = ?",
                     libsql::params![pid],
                 )
@@ -976,6 +972,11 @@ impl Database {
                     "created_at": r.get::<Option<i64>>(2).ok(),
                     "input": r.get::<Option<String>>(3).ok(),
                     "output": r.get::<Option<String>>(4).ok(),
+                    "baseline": {
+                        "repo_url": r.get::<Option<String>>(5).ok(),
+                        "branch": r.get::<Option<String>>(6).ok(),
+                        "commit": r.get::<Option<String>>(7).ok(),
+                    }
                 }));
             }
 
@@ -1032,11 +1033,6 @@ impl Database {
                 "cc": cc,
                 "total_parts": total_parts,
                 "received_parts": received_parts,
-                "baseline": {
-                    "repo_url": repo_url,
-                    "branch": branch,
-                    "commit": commit,
-                },
                 "reviews": reviews,
                 "patches": patches,
                 "thread": messages
@@ -1087,7 +1083,6 @@ mod tests {
                 1,
                 "to",
                 "cc",
-                None,
                 Some(1),
                 1,
             )
@@ -1123,7 +1118,6 @@ mod tests {
                 1,
                 "to",
                 "cc",
-                None,
                 Some(1),
                 0,
             )
@@ -1151,7 +1145,6 @@ mod tests {
             1,
             "to",
             "cc",
-            None,
             Some(1),
             2,
         )
@@ -1173,7 +1166,6 @@ mod tests {
                 1,
                 "to",
                 "cc",
-                None,
                 Some(1),
                 0,
             )
@@ -1195,7 +1187,6 @@ mod tests {
                 1,
                 "to",
                 "cc",
-                None,
                 Some(2),
                 0,
             )
@@ -1229,7 +1220,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 Some(1),
                 1,
             )
@@ -1254,7 +1244,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 Some(1),
                 3,
             )
@@ -1294,7 +1283,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 Some(1),
                 3,
             )
@@ -1322,7 +1310,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 Some(1),
                 2,
             )
@@ -1367,7 +1354,6 @@ mod tests {
                     1,
                     "to",
                     "cc",
-                    None,
                     None,
                     idx as u32,
                 )
@@ -1418,7 +1404,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 None,
                 1,
             )
@@ -1493,7 +1478,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 Some(6),
                 0,
             )
@@ -1528,7 +1512,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 None,
                 1,
             )
@@ -1581,7 +1564,6 @@ mod tests {
                 "",
                 "",
                 None,
-                None,
                 1,
             )
             .await
@@ -1615,7 +1597,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 None,
                 1,
             )
@@ -1666,7 +1647,6 @@ mod tests {
                 "",
                 "",
                 None,
-                None,
                 0,
             )
             .await
@@ -1700,7 +1680,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 None,
                 1,
             )
@@ -1750,7 +1729,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 Some(5),
                 1,
             )
@@ -1785,7 +1763,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 Some(6),
                 1,
             )
@@ -1835,7 +1812,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 Some(3),
                 0,
             )
@@ -1870,7 +1846,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 Some(3),
                 1,
             )
@@ -1905,7 +1880,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 Some(3),
                 2,
             )
@@ -1953,7 +1927,6 @@ mod tests {
                 1,
                 "",
                 "",
-                None,
                 Some(3),
                 0,
             )
@@ -1987,7 +1960,7 @@ mod tests {
 
         let ps_part1 = db
             .create_patchset(
-                thread_id, None, subject, author, 80005, 17, 1, "", "", None,
+                thread_id, None, subject, author, 80005, 17, 1, "", "",
                 parsed_ver, // Pass the result of the potentially buggy parser
                 1,
             )

@@ -326,30 +326,7 @@ async fn process_parsed_article(worker_db: &Database, article: ParsedArticle) ->
         }
     }
 
-    // Detect baseline
-    let baseline = crate::baseline::detect_baseline(
-        &metadata.subject,
-        patch_opt.as_ref().map(|p| p.body.as_str()).unwrap_or(""),
-    );
-    let baseline_id = match baseline {
-        Ok(b) if b.branch.is_some() || b.commit.is_some() => {
-            match worker_db
-                .create_baseline(
-                    b.repo_url.as_deref(),
-                    b.branch.as_deref(),
-                    b.commit.as_deref(),
-                )
-                .await
-            {
-                Ok(id) => Some(id),
-                Err(e) => {
-                    error!("Failed to create baseline: {}", e);
-                    None
-                }
-            }
-        }
-        _ => None,
-    };
+    // Removed baseline detection from ingestion as it's now part of review process
 
     // Removed per-article info log
     /*
@@ -382,7 +359,6 @@ async fn process_parsed_article(worker_db: &Database, article: ParsedArticle) ->
                 PARSER_VERSION,
                 &metadata.to,
                 &metadata.cc,
-                baseline_id,
                 metadata.version,
                 metadata.index,
             )
