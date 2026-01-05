@@ -199,3 +199,43 @@ impl Drop for GitWorktree {
         );
     }
 }
+
+pub async fn ensure_remote(repo_path: &Path, name: &str, url: &str) -> Result<()> {
+    // 1. Security Check
+    if !url.contains("kernel.org") {
+        return Err(anyhow!("Refusing to add non-kernel.org remote: {}", url));
+    }
+
+    // 2. Check if exists
+    let check = Command::new("git")
+        .current_dir(repo_path)
+        .args(["remote", "get-url", name])
+        .output()
+        .await?;
+
+    if !check.status.success() {
+        info!("Adding remote {} ({})", name, url);
+        let add = Command::new("git")
+            .current_dir(repo_path)
+            .args(["remote", "add", name, url])
+            .output()
+            .await?;
+        if !add.status.success() {
+            return Err(anyhow!("Failed to add remote: {}", String::from_utf8_lossy(&add.stderr)));
+        }
+    }
+
+    // 3. Fetch
+    info!("Fetching remote {}", name);
+    let fetch = Command::new("git")
+        .current_dir(repo_path)
+        .args(["fetch", name])
+        .output()
+        .await?;
+
+    if !fetch.status.success() {
+        return Err(anyhow!("Failed to fetch remote {}: {}", name, String::from_utf8_lossy(&fetch.stderr)));
+    }
+
+    Ok(())
+}
