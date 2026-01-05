@@ -63,8 +63,10 @@
                     <table class="reviews-table">
                         <thead>
                             <tr>
-                                <th>Model</th>
+                                <th>Provider/Model</th>
                                 <th>Baseline</th>
+                                <th>Prompts</th>
+                                <th>Result</th>
                                 <th>Summary</th>
                                 <th>Date</th>
                                 <th>Links</th>
@@ -75,6 +77,8 @@
                                 const rDate = r.created_at ? new Date(r.created_at * 1000).toLocaleString() : '-';
                                 const inputLink = r.input ? `<a href="data:text/plain;charset=utf-8,${encodeURIComponent(r.input)}" target="_blank">Input</a>` : '-';
                                 const outputLink = r.output ? `<a href="data:text/plain;charset=utf-8,${encodeURIComponent(r.output)}" target="_blank">Result</a>` : '-';
+                                const prompts = r.prompts_hash ? r.prompts_hash.substring(0, 8) : '-';
+                                const providerModel = `${r.provider || '-'}/${r.model || '-'}`;
                                 
                                 let baselineStr = '-';
                                 if (r.baseline) {
@@ -87,8 +91,10 @@
 
                                 return `
                                     <tr>
-                                        <td>${r.model || 'Unknown'}</td>
+                                        <td>${providerModel}</td>
                                         <td>${baselineStr}</td>
+                                        <td>${prompts}</td>
+                                        <td>${r.result || '-'}</td>
                                         <td>${r.summary || '-'}</td>
                                         <td>${rDate}</td>
                                         <td>${inputLink} | ${outputLink}</td>

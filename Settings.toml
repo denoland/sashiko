@@ -8,8 +8,8 @@ port = 119
 groups = ["org.kernel.vger.linux-kernel"]
 
 [ai]
-provider = "openai"
-model = "gpt-4-turbo"
+provider = "gemini"
+model = "gemini-3-pro"
 api_key = "your-api-key"
 
 [server]

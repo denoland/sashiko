@@ -280,3 +280,17 @@ pub async fn ensure_remote(repo_path: &Path, name: &str, url: &str, force_fetch:
 
     Ok(())
 }
+
+pub async fn get_commit_hash(path: &Path, ref_name: &str) -> Result<String> {
+    let output = Command::new("git")
+        .current_dir(path)
+        .args(["rev-parse", ref_name])
+        .output()
+        .await?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        Err(anyhow!("Failed to resolve {}: {}", ref_name, String::from_utf8_lossy(&output.stderr)))
+    }
+}

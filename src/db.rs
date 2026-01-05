@@ -180,8 +180,42 @@ impl Database {
         let _ = self
             .try_add_column("patches", "apply_error", "TEXT")
             .await;
+        let _ = self
+            .try_add_column("reviews", "provider", "TEXT")
+            .await;
+        let _ = self
+            .try_add_column("reviews", "prompts_git_hash", "TEXT")
+            .await;
+        let _ = self
+            .try_add_column("reviews", "result_description", "TEXT")
+            .await;
 
         info!("Database schema applied");
+        Ok(())
+    }
+
+    pub async fn create_review_experiment(
+        &self,
+        patchset_id: i64,
+        provider: &str,
+        model: &str,
+        prompts_hash: Option<&str>,
+        baseline_id: Option<i64>,
+        result_description: &str,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO reviews (patchset_id, provider, model_name, prompts_git_hash, baseline_id, result_description, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            libsql::params![
+                patchset_id,
+                provider,
+                model,
+                prompts_hash,
+                baseline_id,
+                result_description,
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64
+            ],
+        ).await?;
         Ok(())
     }
 
@@ -1045,11 +1079,14 @@ impl Database {
             let mut rev_rows = self
                 .conn
                 .query(
-                    "SELECT r.model_name, r.summary, r.created_at, ai.input_context, ai.output_raw, b.repo_url, b.branch, b.last_known_commit
+                    "SELECT r.model_name, r.summary, r.created_at, ai.input_context, ai.output_raw, 
+                            b.repo_url, b.branch, b.last_known_commit,
+                            r.provider, r.prompts_git_hash, r.result_description
                  FROM reviews r
                  LEFT JOIN ai_interactions ai ON r.interaction_id = ai.id
                  LEFT JOIN baselines b ON r.baseline_id = b.id
-                 WHERE r.patchset_id = ?",
+                 WHERE r.patchset_id = ?
+                 ORDER BY r.created_at DESC",
                     libsql::params![pid],
                 )
                 .await?;
@@ -1065,7 +1102,10 @@ impl Database {
                         "repo_url": r.get::<Option<String>>(5).ok(),
                         "branch": r.get::<Option<String>>(6).ok(),
                         "commit": r.get::<Option<String>>(7).ok(),
-                    }
+                    },
+                    "provider": r.get::<Option<String>>(8).ok(),
+                    "prompts_hash": r.get::<Option<String>>(9).ok(),
+                    "result": r.get::<Option<String>>(10).ok(),
                 }));
             }
 

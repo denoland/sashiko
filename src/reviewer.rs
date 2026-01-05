@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::Semaphore;
@@ -7,7 +7,7 @@ use tracing::{info, error, warn};
 use crate::db::Database;
 use crate::settings::Settings;
 use crate::baseline::{BaselineRegistry, extract_files_from_diff, BaselineResolution};
-use crate::git_ops::ensure_remote;
+use crate::git_ops::{ensure_remote, get_commit_hash};
 use serde_json::json;
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
@@ -148,28 +148,45 @@ impl Reviewer {
                     }
                 };
 
-                let mut status = match run_review_tool(patchset_id, &input_payload, &settings, db.clone(), &baseline_ref).await {
-                    Ok(s) => s,
+                // Get Hashes for Experiment Record
+                let prompts_hash = get_commit_hash(Path::new("review-prompts"), "HEAD").await.ok();
+                let repo_path = PathBuf::from(&settings.git.repository_path);
+                let baseline_commit = get_commit_hash(&repo_path, &baseline_ref).await.ok();
+                
+                // Create Baseline Record
+                let baseline_id = if let Some(commit) = &baseline_commit {
+                    let (repo_url, branch) = if let Some((u, _)) = &remote_info {
+                        (Some(u.as_str()), Some(baseline_ref.as_str()))
+                    } else {
+                        (None, Some(baseline_ref.as_str()))
+                    };
+                    db.create_baseline(repo_url, branch, Some(commit)).await.ok()
+                } else {
+                    None
+                };
+
+                let (mut status, mut description) = match run_review_tool(patchset_id, &input_payload, &settings, db.clone(), &baseline_ref).await {
+                    Ok(r) => r,
                     Err(e) => {
                         error!("Review execution failed for {}: {}", patchset_id, e);
-                        "Failed".to_string()
+                        ("Failed".to_string(), format!("Execution error: {}", e))
                     }
                 };
 
-                // Retry logic if failed with remote baseline
+                // Retry logic
                 if status == "Failed" {
                     if let Some((url, name)) = remote_info {
                         info!("Patchset {} failed with remote baseline. Forcing fetch and retrying...", patchset_id);
-                        let repo_path = PathBuf::from(&settings.git.repository_path);
-                        // Force fetch
                         if let Ok(_) = ensure_remote(&repo_path, &name, &url, true).await {
                              match run_review_tool(patchset_id, &input_payload, &settings, db.clone(), &baseline_ref).await {
-                                Ok(s) => {
+                                Ok((s, d)) => {
                                     info!("Retry result for {}: {}", patchset_id, s);
                                     status = s;
+                                    description = d;
                                 },
                                 Err(e) => {
                                     error!("Retry failed for {}: {}", patchset_id, e);
+                                    description = format!("Retry error: {}", e);
                                 }
                              }
                         }
@@ -180,6 +197,18 @@ impl Reviewer {
                 if let Err(e) = db.update_patchset_status(patchset_id, &status).await {
                     error!("Failed to update status for {}: {}", patchset_id, e);
                 }
+
+                // Record Experiment
+                if let Err(e) = db.create_review_experiment(
+                    patchset_id,
+                    &settings.ai.provider,
+                    &settings.ai.model,
+                    prompts_hash.as_deref(),
+                    baseline_id,
+                    &description
+                ).await {
+                    error!("Failed to record review experiment for {}: {}", patchset_id, e);
+                }
             });
         }
 
@@ -187,7 +216,7 @@ impl Reviewer {
     }
 }
 
-async fn run_review_tool(patchset_id: i64, input_payload: &serde_json::Value, settings: &Settings, db: Arc<Database>, baseline: &str) -> Result<String> {
+async fn run_review_tool(patchset_id: i64, input_payload: &serde_json::Value, settings: &Settings, db: Arc<Database>, baseline: &str) -> Result<(String, String)> {
     let exe_path = std::env::current_exe()?;
     let bin_dir = exe_path.parent().unwrap_or_else(|| std::path::Path::new("."));
     let review_bin = bin_dir.join("review");
@@ -202,7 +231,7 @@ async fn run_review_tool(patchset_id: i64, input_payload: &serde_json::Value, se
     };
 
     cmd.args([
-        "--json", // Use JSON mode
+        "--json", 
         "--baseline", baseline, 
         "--worktree-dir", &settings.review.worktree_dir,
     ]);
@@ -213,7 +242,6 @@ async fn run_review_tool(patchset_id: i64, input_payload: &serde_json::Value, se
 
     let mut child = cmd.spawn()?;
 
-    // Write input JSON to stdin
     if let Some(mut stdin) = child.stdin.take() {
         let input_str = serde_json::to_string(input_payload)?;
         stdin.write_all(input_str.as_bytes()).await?;
@@ -224,18 +252,15 @@ async fn run_review_tool(patchset_id: i64, input_payload: &serde_json::Value, se
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         warn!("Review tool failed (exit code {:?}): {}", output.status.code(), stderr);
-        return Ok("Failed".to_string());
+        return Ok(("Failed".to_string(), format!("Tool failure: {}", stderr)));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     
-    // Parse JSON output
     let json: serde_json::Value = serde_json::from_str(&stdout)?;
-    
-    // Check if all patches applied
     let patches = json["patches"].as_array().ok_or_else(|| anyhow::anyhow!("Invalid output JSON: no patches"))?;
     
-    // Update individual patch status in DB
+    // Update DB
     for p in patches {
         let idx = p["index"].as_i64().unwrap_or(0);
         let status = p["status"].as_str().unwrap_or("error");
@@ -249,11 +274,17 @@ async fn run_review_tool(patchset_id: i64, input_payload: &serde_json::Value, se
     let all_applied = patches.iter().all(|p| p["status"] == "applied");
 
     if all_applied {
-        Ok("Applied".to_string())
+        Ok(("Applied".to_string(), "All patches applied successfully.".to_string()))
     } else {
+        let mut errors = Vec::new();
         for p in patches.iter().filter(|p| p["status"] == "failed").take(3) {
-            warn!("Patch {} failed: {}", p["index"], p["stderr"].as_str().unwrap_or(""));
+            let msg = format!("Patch {} failed: {}", p["index"], p["stderr"].as_str().unwrap_or(""));
+            warn!("{}", msg);
+            errors.push(msg);
         }
-        Ok("Failed".to_string())
+        if errors.is_empty() {
+            errors.push("Unknown patch failure".to_string());
+        }
+        Ok(("Failed".to_string(), errors.join("; ")))
     }
 }
