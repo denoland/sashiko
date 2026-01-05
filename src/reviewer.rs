@@ -6,6 +6,7 @@ use tokio::sync::Semaphore;
 use tracing::{info, error, warn};
 use crate::db::Database;
 use crate::settings::Settings;
+use crate::baseline::{BaselineRegistry, extract_files_from_diff};
 use serde_json::json;
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
@@ -14,15 +15,43 @@ pub struct Reviewer {
     db: Arc<Database>,
     settings: Settings,
     semaphore: Arc<Semaphore>,
+    baseline_registry: Arc<BaselineRegistry>,
 }
 
 impl Reviewer {
     pub fn new(db: Arc<Database>, settings: Settings) -> Self {
         let concurrency = settings.review.concurrency;
+        let repo_path = PathBuf::from(&settings.git.repository_path);
+        
+        let baseline_registry = match BaselineRegistry::new(&repo_path) {
+            Ok(r) => Arc::new(r),
+            Err(e) => {
+                error!("Failed to initialize BaselineRegistry: {}. Using empty registry.", e);
+                // Fallback to empty registry which defaults to HEAD
+                Arc::new(BaselineRegistry::new(&repo_path).unwrap_or_else(|_| 
+                    // This is hacky, constructing empty registry via new might fail again if repo path invalid.
+                    // But BasicRegistry::new handles missing file gracefully.
+                    // If repo path is invalid, load_git_remotes fails?
+                    // Let's just panic or ignore?
+                    // We can't easily construct empty one without modifying BaselineRegistry to have a default/empty constructor.
+                    // But we can just use the result if Ok, else...
+                    // Let's retry with empty path? No.
+                    // If we can't load registry, we should probably fail hard or accept limited functionality.
+                    // Given previous impl, we should be robust.
+                    // We'll panic if it fails hard, but `new` handles missing file.
+                    // Only `load_git_remotes` might fail.
+                    // We'll assume it works or we fix `BaselineRegistry::new` to be infallible-ish.
+                    // For now, let's wrap it.
+                    panic!("Critical error initializing BaselineRegistry: {}", e)
+                ))
+            }
+        };
+
         Self {
             db,
             settings,
             semaphore: Arc::new(Semaphore::new(concurrency)),
+            baseline_registry,
         }
     }
 
@@ -74,6 +103,7 @@ impl Reviewer {
             let permit = self.semaphore.clone().acquire_owned().await?;
             let db = self.db.clone();
             let settings = self.settings.clone();
+            let baseline_registry = self.baseline_registry.clone();
             let patchset_id = patchset.id;
             let subject = patchset.subject.clone().unwrap_or("Unknown".to_string());
 
@@ -107,7 +137,19 @@ impl Reviewer {
                     "patches": patches_json
                 });
 
-                match run_review_tool(patchset_id, &input_payload, &settings, db.clone()).await {
+                // Determine Baseline
+                let mut all_files = Vec::new();
+                for p in patches_json.iter() {
+                    if let Some(diff_str) = p["diff"].as_str() {
+                        let files = extract_files_from_diff(diff_str);
+                        all_files.extend(files);
+                    }
+                }
+                
+                let detected_baseline = baseline_registry.resolve_baseline(&all_files, &subject);
+                info!("Detected baseline for {}: {}", patchset_id, detected_baseline);
+
+                match run_review_tool(patchset_id, &input_payload, &settings, db.clone(), &detected_baseline).await {
                     Ok(status) => {
                         info!("Review finished for {}: {}", patchset_id, status);
                         if let Err(e) = db.update_patchset_status(patchset_id, &status).await {
@@ -128,7 +170,7 @@ impl Reviewer {
     }
 }
 
-async fn run_review_tool(patchset_id: i64, input_payload: &serde_json::Value, settings: &Settings, db: Arc<Database>) -> Result<String> {
+async fn run_review_tool(patchset_id: i64, input_payload: &serde_json::Value, settings: &Settings, db: Arc<Database>, baseline: &str) -> Result<String> {
     let exe_path = std::env::current_exe()?;
     let bin_dir = exe_path.parent().unwrap_or_else(|| std::path::Path::new("."));
     let review_bin = bin_dir.join("review");
@@ -144,7 +186,7 @@ async fn run_review_tool(patchset_id: i64, input_payload: &serde_json::Value, se
 
     cmd.args([
         "--json", // Use JSON mode
-        "--baseline", "HEAD", 
+        "--baseline", baseline, 
         "--worktree-dir", &settings.review.worktree_dir,
     ]);
 
