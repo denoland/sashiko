@@ -8,3 +8,4 @@ Cargo.lock
 archives/
 .cargo/config.toml
 sashiko.log
+review_trees/
