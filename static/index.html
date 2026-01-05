@@ -20,10 +20,9 @@
 </head>
 <body>
     <h1>Sashiko Patch Tracker</h1>
-    <div id="stats">Loading stats...</div>
 
-    <div style="margin-top: 20px; margin-bottom: 20px;">
-        <input type="text" id="searchInput" placeholder="Search (subject, author:..., subject:..., date:...)" style="width: 300px; padding: 5px;">
+    <div style="margin-top: 20px; margin-bottom: 20px; display: flex; gap: 10px;">
+        <input type="text" id="searchInput" placeholder="Search (subject, author:..., subject:..., date:...)" style="flex-grow: 1; padding: 5px;">
         <button onclick="triggerSearch()">Search</button>
         <button onclick="clearSearch()">Clear</button>
     </div>
@@ -55,6 +54,8 @@
         <button id="nextBtn" onclick="changePage(1)">Next</button>
         <button id="lastBtn" onclick="goToLast()" disabled>Last</button>
     </div>
+
+    <div id="stats" style="margin-top: 30px; border-top: 1px solid #ccc; padding-top: 10px; font-size: 0.9em; color: #666;">Loading stats...</div>
 
     <script>
         let currentPage = 1;
