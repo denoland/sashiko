@@ -1,0 +1,3 @@
+[submodule "review-prompts"]
+	path = review-prompts
+	url = git@github.com:masoncl/review-prompts.git

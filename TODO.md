@@ -33,6 +33,7 @@
 - [ ] Set up `ai_interactions` table and workflow engine for chain restoration.
 - [ ] Integrate with `review-prompts` repository logic.
 - [ ] Implement consensus/comparison logic for multiple LLM runs.
+- [ ] **Task**: Implement `sashiko-review` agent with Gemini 3 Pro and Git Tools.
 
 ## Phase 4: Web API & Frontend
 - [x] Build Axum REST API for patches, reviews, and stats.
