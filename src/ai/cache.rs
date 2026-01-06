@@ -1,7 +1,7 @@
 use crate::ai::gemini::{Content, CreateCachedContentRequest, GenAiClient, Part, Tool};
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::fs;
 
 pub struct CacheManager {
@@ -33,32 +33,16 @@ impl CacheManager {
     async fn build_context(&self) -> Result<String> {
         let mut context = String::new();
 
-        // 1. System Persona (review-core.md)
+        // 1. System Persona (Prompt + review-core.md)
+        context.push_str("You're an expert Linux kernel developer and maintainer with deep knowledge of Linux, Operating Systems, modern hardware and Linux community standards and processes.\n\n");
+
         let core_path = self.base_dir.join("review-core.md");
         if core_path.exists() {
             context.push_str(&fs::read_to_string(&core_path).await?);
             context.push_str("\n\n");
         }
 
-        // 2. Kernel Standards (The "Constitution")
-        // We assume the agent runs from the project root.
-        let docs = vec![
-            "linux/Documentation/process/coding-style.rst",
-            "linux/Documentation/process/submitting-patches.rst",
-            "linux/Documentation/process/submit-checklist.rst",
-        ];
-
-        context.push_str("# Linux Kernel Standards\n\n");
-        for doc in docs {
-            let path = Path::new(doc);
-            if path.exists() {
-                context.push_str(&format!("## {}\n", doc));
-                context.push_str(&fs::read_to_string(path).await?);
-                context.push_str("\n\n");
-            }
-        }
-
-        // 3. Prompt Library
+        // 2. Prompt Library
         context.push_str("# Subsystem Guidelines\n\n");
 
         // Read root of prompts dir
@@ -72,7 +56,11 @@ impl CacheManager {
         for path in paths {
             if path.extension().is_some_and(|ext| ext == "md") {
                 let fname = path.file_name().unwrap().to_string_lossy();
-                if fname == "review-core.md" || fname == "README.md" {
+                if fname == "review-core.md"
+                    || fname == "README.md"
+                    || fname == "review-one.md"
+                    || fname == "review-stat.md"
+                {
                     continue;
                 }
                 context.push_str(&format!("## {}\n", fname));
@@ -317,8 +305,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let base_dir = temp_dir.path().to_path_buf();
 
-        // Construct the expected context string for an empty dir (assuming no linux docs in CWD)
-        let context_str = "# Linux Kernel Standards\n\n# Subsystem Guidelines\n\n";
+        // Construct the expected context string for an empty dir
+        let context_str = "You're an expert Linux kernel developer and maintainer with deep knowledge of Linux, Operating Systems, modern hardware and Linux community standards and processes.\n\n# Subsystem Guidelines\n\n";
         let mut hasher = Sha256::new();
         hasher.update(context_str);
         // Tools are None

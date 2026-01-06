@@ -14,8 +14,8 @@ mod tests {
 
     #[test]
     fn test_list_dir_linux() {
-        let (linux_path, prompts_path) = get_test_paths();
-        let toolbox = ToolBox::new(linux_path, prompts_path);
+        let (linux_path, _prompts_path) = get_test_paths();
+        let toolbox = ToolBox::new(linux_path);
         let rt = Runtime::new().unwrap();
 
         let args = json!({ "path": "." });
@@ -28,8 +28,8 @@ mod tests {
 
     #[test]
     fn test_read_file_linux_readme() {
-        let (linux_path, prompts_path) = get_test_paths();
-        let toolbox = ToolBox::new(linux_path, prompts_path);
+        let (linux_path, _prompts_path) = get_test_paths();
+        let toolbox = ToolBox::new(linux_path);
         let rt = Runtime::new().unwrap();
 
         let args = json!({ "path": "README", "start_line": 1, "end_line": 5 });
@@ -42,8 +42,8 @@ mod tests {
 
     #[test]
     fn test_git_show_head() {
-        let (linux_path, prompts_path) = get_test_paths();
-        let toolbox = ToolBox::new(linux_path, prompts_path);
+        let (linux_path, _prompts_path) = get_test_paths();
+        let toolbox = ToolBox::new(linux_path);
         let rt = Runtime::new().unwrap();
 
         let args = json!({ "object": "HEAD" });
@@ -56,8 +56,8 @@ mod tests {
 
     #[test]
     fn test_git_blame_readme() {
-        let (linux_path, prompts_path) = get_test_paths();
-        let toolbox = ToolBox::new(linux_path, prompts_path);
+        let (linux_path, _prompts_path) = get_test_paths();
+        let toolbox = ToolBox::new(linux_path);
         let rt = Runtime::new().unwrap();
 
         let args = json!({ "path": "README", "start_line": 1, "end_line": 3 });
@@ -74,8 +74,9 @@ mod tests {
         let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
         let temp_dir = tempfile::tempdir().unwrap();
         let worktree_path = temp_dir.path().to_path_buf();
-        let prompts_path = root.join("review-prompts");
+        let _prompts_path = root.join("review-prompts");
         let toolbox = ToolBox::new(worktree_path.clone());
+
         let rt = Runtime::new().unwrap();
 
         let filename = "test-write.txt";
