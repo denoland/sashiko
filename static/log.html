@@ -4,148 +4,131 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Interaction Log</title>
-    <style>
-        :root {
-            --color-canvas-default: #ffffff;
-            --color-canvas-subtle: #f6f8fa;
-            --color-border-default: #d0d7de;
-            --color-border-muted: #d8dee4;
-            --color-fg-default: #24292f;
-            --color-fg-muted: #57606a;
-            --color-accent-fg: #0969da;
-            --color-success-fg: #1a7f37;
-            --color-attention-fg: #9a6700;
-            --color-danger-fg: #cf222e;
-            --color-role-user: #0969da;
-            --color-role-model: #8a63d2;
-            --color-role-tool: #6e7781;
-        }
-
-        body {
-            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-            font-size: 13px;
-            line-height: 1.5;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: var(--color-canvas-subtle);
-            color: var(--color-fg-default);
-        }
-
-        a { color: var(--color-accent-fg); text-decoration: none; }
-        a:hover { text-decoration: underline; }
-
-        .header { margin-bottom: 20px; display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--color-border-default); padding-bottom: 10px; }
-        .header h1 { font-size: 1.2em; margin: 0; }
-        .meta-info { font-size: 0.9em; color: var(--color-fg-muted); }
-
-        .log-stream {
-            display: flex;
-            flex-direction: column;
-            gap: 0; /* Remove gap, use borders/margins on items */
-            background: var(--color-canvas-default);
-            border: 1px solid var(--color-border-default);
-            border-radius: 6px;
-            overflow: hidden;
-        }
-
-        .log-entry {
-            padding: 8px 12px;
-            border-bottom: 1px solid var(--color-border-muted);
-            display: flex;
-            gap: 12px;
-            position: relative;
-        }
-        .log-entry:last-child { border-bottom: none; }
-
-        .log-entry:hover { background-color: #fbfcfd; }
-
-        /* Role Indicators (Left Border Strip) */
-        .log-entry::before {
-            content: '';
-            position: absolute;
-            left: 0; top: 0; bottom: 0;
-            width: 4px;
-        }
-        .role-user::before { background-color: var(--color-role-user); }
-        .role-model::before { background-color: var(--color-role-model); }
-        .role-tool::before { background-color: var(--color-role-tool); }
-
-        .role-icon {
-            flex-shrink: 0;
-            width: 24px;
-            text-align: center;
-            font-weight: bold;
-            font-size: 1.1em;
-            padding-top: 2px;
-            user-select: none;
-        }
-        .role-user .role-icon { color: var(--color-role-user); }
-        .role-model .role-icon { color: var(--color-role-model); }
-        .role-tool .role-icon { color: var(--color-role-tool); }
-
-        .content { flex-grow: 1; min-width: 0; overflow-wrap: break-word; }
-
-        .role-label {
-            font-size: 0.85em;
-            font-weight: 600;
-            color: var(--color-fg-muted);
-            margin-bottom: 2px;
-            display: block;
-        }
-
-        /* Content Blocks */
-        .text-block {
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-
-        /* Tool Calls */
-        .tool-call {
-            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-            background-color: #f6f8fa;
-            border: 1px solid var(--color-border-muted);
-            border-radius: 4px;
-            padding: 6px 8px;
-            margin: 4px 0;
-        }
-        .fn-name { color: var(--color-role-model); font-weight: bold; }
-        .fn-args { color: var(--color-fg-default); }
-
-        /* Tool Results */
-        .tool-result {
-            margin-top: 4px;
-            color: var(--color-fg-muted);
-        }
-
-        /* Collapsibles */
-        .collapsible-trigger {
-            cursor: pointer;
-            color: var(--color-accent-fg);
-            font-size: 0.85em;
-            display: inline-flex;
-            align-items: center;
-            margin-top: 4px;
-            user-select: none;
-        }
-        .collapsible-trigger:hover { text-decoration: underline; }
-        .collapsible-content { display: none; margin-top: 6px; border-top: 1px dashed var(--color-border-muted); padding-top: 6px; }
-        .collapsible.open .collapsible-content { display: block; }
-        .arrow { font-size: 0.8em; margin-left: 4px; transition: transform 0.2s; }
-        .collapsible.open .arrow { transform: rotate(90deg); }
-
-        pre { margin: 0; background: none; font-family: inherit; }
-
-        .truncated-msg {
-            background: #fff8c5;
-            padding: 2px 6px;
-            font-size: 0.85em;
-            border-radius: 3px;
-            display: inline-block;
-            margin-bottom: 4px;
-        }
-    </style>
-</head>
+        <style>
+            :root {
+                --color-canvas-default: #ffffff;
+                --color-canvas-subtle: #ffffff; /* Kernel.org is white */
+                --color-border-default: #cccccc;
+                --color-border-muted: #eeeeee;
+                --color-fg-default: #000000;
+                --color-fg-muted: #666666;
+                --color-accent-fg: #336699; /* Kernel.org Link Blue */
+                --color-role-user: #336699;
+                --color-role-model: #800080;
+                --color-role-tool: #555555;
+            }
+    
+            body { 
+                font-family: sans-serif; /* Kernel.org uses sans-serif for main content */
+                font-size: 14px;
+                line-height: 1.5;
+                max-width: 1200px; 
+                margin: 0 auto; 
+                padding: 20px; 
+                background-color: var(--color-canvas-subtle); 
+                color: var(--color-fg-default);
+            }
+    
+            /* Monospace for logs */
+            .content, .text-block, pre, code {
+                font-family: monospace;
+            }
+    
+            a { color: var(--color-accent-fg); text-decoration: none; }
+            a:hover { text-decoration: underline; }
+    
+            .header { margin-bottom: 20px; border-bottom: 1px solid var(--color-border-default); padding-bottom: 10px; }
+            .header h1 { font-size: 1.5em; margin: 0 0 5px 0; font-family: serif; /* Kernel.org header feel */ }
+            .meta-info { font-size: 0.9em; color: var(--color-fg-muted); }
+    
+            .log-stream {
+                display: flex;
+                flex-direction: column;
+                border-top: 1px solid var(--color-border-default);
+            }
+    
+            .log-entry {
+                padding: 15px 0;
+                border-bottom: 1px solid var(--color-border-muted);
+                display: flex;
+                gap: 15px;
+            }
+    
+            /* Remove hover effect for cleaner look */
+            /* .log-entry:hover { background-color: #fbfcfd; } */
+    
+            /* Minimalist Role Indicators */
+            .role-icon {
+                flex-shrink: 0;
+                width: 20px;
+                text-align: right;
+                font-weight: bold;
+                font-size: 1.2em;
+                user-select: none;
+                color: var(--color-fg-muted);
+            }
+            
+            .role-user .role-icon { color: var(--color-role-user); }
+            .role-model .role-icon { color: var(--color-role-model); }
+            .role-tool .role-icon { color: var(--color-role-tool); }
+    
+            .content { flex-grow: 1; min-width: 0; overflow-wrap: break-word; }
+    
+            .role-label {
+                font-size: 0.85em;
+                font-weight: bold;
+                color: var(--color-fg-muted);
+                margin-bottom: 5px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .role-user .role-label { color: var(--color-role-user); }
+            .role-model .role-label { color: var(--color-role-model); }
+            .role-tool .role-label { color: var(--color-role-tool); }
+    
+            /* Content Blocks */
+            .text-block {
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+    
+            /* Tool Calls - Simple Box */
+            .tool-call {
+                background-color: #f9f9f9;
+                border: 1px solid #ddd;
+                padding: 8px;
+                margin: 5px 0;
+                border-radius: 3px;
+            }
+            .fn-name { color: #000; font-weight: bold; }
+            .fn-args { color: #444; }
+            
+            /* Tool Results */
+            .tool-result {
+                margin-top: 5px;
+                color: #444;
+                padding-left: 10px;
+                border-left: 3px solid #eee;
+            }
+    
+            /* Collapsibles */
+            .collapsible-trigger {
+                cursor: pointer;
+                color: var(--color-accent-fg);
+                font-size: 0.9em;
+                display: inline-flex;
+                align-items: center;
+                margin-top: 5px;
+                user-select: none;
+            }
+            .collapsible-trigger:hover { text-decoration: underline; }
+            .collapsible-content { display: none; margin-top: 5px; padding: 5px; background: #f9f9f9; border: 1px solid #eee; }
+            .collapsible.open .collapsible-content { display: block; }
+            .arrow { font-size: 0.8em; margin-left: 4px; transition: transform 0.2s; }
+            .collapsible.open .arrow { transform: rotate(90deg); }
+    
+            pre { margin: 0; background: none; font-family: inherit; }
+        </style></head>
 <body>
     <div class="header">
         <h1>
@@ -248,7 +231,7 @@
             for (const [k, v] of Object.entries(args)) {
                 // Formatting value: if string, quote it. if number/bool, literal. if obj, compact json?
                 let valStr;
-                if (typeof v === 'string') valStr = "\"${v}\"";
+                if (typeof v === 'string') valStr = `"${v}"`;
                 else if (typeof v === 'object' && v !== null) valStr = '{...}'; // simplified for signature
                 else valStr = String(v);
                 pairs.push(`${k}=${valStr}`);
