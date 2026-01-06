@@ -103,17 +103,6 @@ impl ToolBox {
                     }),
                 },
                 FunctionDeclaration {
-                    name: "read_prompt".to_string(),
-                    description: "Read a specific prompt documentation file.".to_string(),
-                    parameters: json!({
-                        "type": "object",
-                        "properties": {
-                            "name": { "type": "string", "description": "Name of the prompt file (e.g., 'core/identity.md')." }
-                        },
-                        "required": ["name"]
-                    }),
-                },
-                FunctionDeclaration {
                     name: "search_file_content".to_string(),
                     description: "Search for a pattern in files using grep. Returns matching lines with context.".to_string(),
                     parameters: json!({
@@ -150,7 +139,6 @@ impl ToolBox {
             "git_diff" => self.git_diff(args).await,
             "git_show" => self.git_show(args).await,
             "list_dir" => self.list_dir(args).await,
-            "read_prompt" => self.read_prompt(args).await,
             "search_file_content" => self.search_file_content(args).await,
             "find_files" => self.find_files(args).await,
             _ => Err(anyhow!("Unknown tool: {}", name)),
