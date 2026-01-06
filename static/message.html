@@ -27,7 +27,7 @@
         .diff-line { display: block; padding: 0 4px; min-height: 1.5em; }
         .diff-added { background-color: #e6ffec; color: #24292f; }
         .diff-removed { background-color: #ffebe9; color: #24292f; }
-        .diff-header { background-color: #ddf4ff; color: #005cc5; font-weight: bold; }
+        .diff-header { color: #005cc5; font-weight: bold; }
         .copy-btn { margin-left: 10px; cursor: pointer; padding: 2px 8px; background: #eee; border: 1px solid #ccc; border-radius: 4px; font-size: 0.8em; }
         .copy-btn:hover { background: #ddd; }
         .nav { margin-bottom: 20px; }
@@ -119,8 +119,7 @@
                     className += ' diff-header';
                 }
                 
-                const content = line.length === 0 ? '&nbsp;' : escaped;
-                return `<div class="${className}">${content}</div>`;
+                return `<div class="${className}">${escaped}</div>`;
             }).join('');
         }
 

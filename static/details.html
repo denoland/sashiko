@@ -56,7 +56,7 @@
         }
         .diff-added { background-color: #e6ffec; color: #24292f; }
         .diff-removed { background-color: #ffebe9; color: #24292f; }
-        .diff-header { background-color: #ddf4ff; color: #005cc5; font-weight: bold; }
+        .diff-header { color: #005cc5; font-weight: bold; }
         .token-stats { font-size: 0.85em; color: #777; margin-top: 5px; }
     </style>
 </head>
@@ -400,8 +400,7 @@
                     } else if (line.startsWith('@@') || line.startsWith('diff --git') || line.startsWith('--- ') || line.startsWith('+++ ')) {
                         className += ' diff-header';
                     }
-                    const content = line.length === 0 ? '&nbsp;' : line;
-                    return `<div class="${className}">${content}</div>`;
+                    return `<div class="${className}">${line}</div>`;
                 }).join('');
             }
             return escaped;
