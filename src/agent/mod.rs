@@ -233,7 +233,7 @@ impl Agent {
                 let req = GenerateContentWithCacheRequest {
                     cached_content: cache_name.clone(),
                     contents: self.history.clone(),
-                    tools: tools_config,
+                    tools: None, // Tools are baked into the cache
                     generation_config,
                 };
                 info!("Sending request to Gemini (cached: {})...", cache_name);

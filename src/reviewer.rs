@@ -36,6 +36,8 @@ pub struct Reviewer {
     active_cache_name: Arc<Mutex<Option<String>>>,
 }
 
+use crate::agent::tools::ToolBox;
+
 impl Reviewer {
     pub fn new(db: Arc<Database>, settings: Settings) -> Self {
         let concurrency = settings.review.concurrency;
@@ -58,11 +60,18 @@ impl Reviewer {
         // Assuming prompts are in "review-prompts" in CWD.
         let prompts_dir = PathBuf::from("review-prompts");
         let client = Box::new(GeminiClient::new(settings.ai.model.clone()));
+
+        // We need tool definitions for the cache.
+        // We use dummy paths for ToolBox here because we only need declarations,
+        // not execution capability.
+        let tools_def = ToolBox::new(PathBuf::from("."), PathBuf::from(".")).get_declarations();
+
         let cache_manager = Arc::new(CacheManager::new(
             prompts_dir,
             client,
             settings.ai.model.clone(),
             "3600s".to_string(),
+            Some(vec![tools_def]),
         ));
 
         Self {
@@ -573,6 +582,7 @@ impl Reviewer {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_review_tool(
     patchset_id: i64,
     input_payload: &serde_json::Value,
