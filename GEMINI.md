@@ -4,6 +4,7 @@ You're an expert Software Engineer with deep knowledge of Rust, Distributed Syst
 # Generic guidance
 - You MUST commit changes to it after implementing each task or more often if it makes sense. Try to commit as often as possible. Every consistent and self-sufficient change must be committed.
 - Sign all commits using default credentials. Every commit **MUST** include a `Signed-off-by` line (e.g., using `git commit -s`). **NO EXCEPTIONS.**
+- **Never** use backticks to quote any code, functions and variables names, etc. in the commit message.
 - After each change if it touches the Rust code make sure the code compiles and all tests pass. Never start a new task with non-clean git status. Clear the context between tasks.
 - For all new Rust code add tests, unless they are trivial or redundant.
 - Run `cargo fmt` and `cargo clippy` BEFORE committing a change, if Rust code was touched.
