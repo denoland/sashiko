@@ -421,15 +421,13 @@ impl Ingestor {
             cat_reader.read_exact(&mut newline).await?;
 
             if obj_type == "blob" {
-                // Convert raw to lines for the 'content' field (legacy)
-                let content_str = String::from_utf8_lossy(&content);
-                let lines: Vec<String> = content_str.lines().map(|s| s.to_string()).collect();
-
+                // We provide raw content, so 'content' field is ignored by the parser.
+                // We pass an empty vector to avoid expensive UTF-8 validation and allocation.
                 self.sender
                     .send(Event::ArticleFetched {
                         group: group_name.to_string(),
                         article_id: hash.to_string(),
-                        content: lines,
+                        content: Vec::new(),
                         raw: Some(content),
                     })
                     .await?;

@@ -5,7 +5,7 @@ use sashiko::ingestor::Ingestor;
 use sashiko::reviewer::Reviewer;
 use sashiko::settings::Settings;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Semaphore};
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt};
 
@@ -80,11 +80,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (parsed_tx, mut parsed_rx) = mpsc::channel::<ParsedArticle>(1000);
 
     // Parser Dispatcher
+    let semaphore = Arc::new(Semaphore::new(50));
     tokio::spawn(async move {
         info!("Parser Dispatcher started");
         while let Some(event) = raw_rx.recv().await {
+            let permit = match semaphore.clone().acquire_owned().await {
+                Ok(p) => p,
+                Err(e) => {
+                    error!("Semaphore error: {}", e);
+                    break;
+                }
+            };
             let tx = parsed_tx.clone();
             tokio::spawn(async move {
+                let _permit = permit; // Hold permit until task completion
+
                 // Extract raw bytes
                 let (group, article_id, raw_bytes) = match event {
                     Event::ArticleFetched {
