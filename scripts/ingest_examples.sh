@@ -23,12 +23,6 @@ fi
 
 echo "Found ${#MSG_IDS[@]} message IDs in $(basename "$STAT_FILE")."
 
-PARENTS_FILE="$SCRIPT_DIR/review-parents.txt"
-if [[ -f "$PARENTS_FILE" ]]; then
-    mapfile -t PARENT_IDS < "$PARENTS_FILE"
-    echo "Found ${#PARENT_IDS[@]} parent message IDs in $(basename "$PARENTS_FILE")."
-    MSG_IDS+=("${PARENT_IDS[@]}")
-fi
 
 # Construct arguments
 CMD_ARGS=("--ingest-only")
