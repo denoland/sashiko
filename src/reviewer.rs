@@ -829,8 +829,13 @@ async fn run_review_tool(
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                // Forward stderr to our log (or warn)
-                warn!("[review-bin] {}", line); // Too noisy?
+                if line.contains(" ERROR ") {
+                    error!("[review-bin] {}", line);
+                } else if line.contains(" WARN ") {
+                    warn!("[review-bin] {}", line);
+                } else {
+                    info!("[review-bin] {}", line);
+                }
             }
         });
     }
