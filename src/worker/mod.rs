@@ -32,6 +32,8 @@ pub struct WorkerResult {
     pub error: Option<String>,
     pub input_context: String,
     pub history: Vec<Content>,
+    pub history_before_pruning: Vec<Content>,
+    pub history_after_pruning: Vec<Content>,
     pub tokens_in: u32,
     pub tokens_out: u32,
     pub tokens_cached: u32,
@@ -95,12 +97,21 @@ impl Worker {
         count
     }
 
-    fn prune_history(&mut self, system_instruction: &Option<Content>) {
+    fn prune_history(
+        &mut self,
+        system_instruction: &Option<Content>,
+    ) -> (Vec<Content>, Vec<Content>) {
+        let before_pruning = self.history.clone();
         let limit = self.max_input_words; // Treating max_input_words as max_tokens for now
         let mut current_tokens = self.estimate_history_tokens(system_instruction);
 
+        debug!(
+            "Pruning check: {} tokens vs limit {}",
+            current_tokens, limit
+        );
+
         if current_tokens <= limit {
-            return;
+            return (before_pruning, self.history.clone());
         }
 
         // Keep index 0 (Task Prompt). Prune from index 1.
@@ -111,7 +122,13 @@ impl Worker {
             let removed = self.history.remove(1);
             let removed_tokens = self.estimate_content_tokens(&removed);
             current_tokens = current_tokens.saturating_sub(removed_tokens);
+            debug!(
+                "Pruned message with {} tokens. New total: {}",
+                removed_tokens, current_tokens
+            );
         }
+
+        (before_pruning, self.history.clone())
     }
 
     pub async fn run(&mut self, _patchset: Value) -> Result<WorkerResult> {
@@ -149,6 +166,10 @@ impl Worker {
         let mut last_tool_call: Option<(String, Value)> = None;
         let mut consecutive_tool_count = 0;
 
+        // Track the final state of history for the last turn
+        let mut final_history_before_pruning = Vec::new();
+        let mut final_history_after_pruning = Vec::new();
+
         loop {
             turns += 1;
             if turns > self.max_interactions {
@@ -160,6 +181,8 @@ impl Worker {
                     )),
                     input_context,
                     history: self.history.clone(),
+                    history_before_pruning: final_history_before_pruning,
+                    history_after_pruning: final_history_after_pruning,
                     tokens_in: total_tokens_in,
                     tokens_out: total_tokens_out,
                     tokens_cached: total_tokens_cached,
@@ -196,7 +219,9 @@ impl Worker {
             });
 
             // Enforce token budget by pruning
-            self.prune_history(&Some(system_content.clone()));
+            let (before, after) = self.prune_history(&Some(system_content.clone()));
+            final_history_before_pruning = before;
+            final_history_after_pruning = after;
 
             let tools_config = Some(vec![self.tools.get_declarations()]);
             let generation_config = Some(GenerationConfig {
@@ -287,6 +312,8 @@ impl Worker {
                                 error: Some(error_msg),
                                 input_context: input_context.clone(),
                                 history: self.history.clone(),
+                                history_before_pruning: final_history_before_pruning,
+                                history_after_pruning: final_history_after_pruning,
                                 tokens_in: total_tokens_in,
                                 tokens_out: total_tokens_out,
                                 tokens_cached: total_tokens_cached,
@@ -352,6 +379,8 @@ impl Worker {
                     error: None,
                     input_context,
                     history: self.history.clone(),
+                    history_before_pruning: final_history_before_pruning,
+                    history_after_pruning: final_history_after_pruning,
                     tokens_in: total_tokens_in,
                     tokens_out: total_tokens_out,
                     tokens_cached: total_tokens_cached,
