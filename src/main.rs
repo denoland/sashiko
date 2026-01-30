@@ -168,6 +168,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _permit = permit; // Hold permit until task completion
 
                 match event {
+                    Event::IngestionFailed { article_id, error } => {
+                        if let Err(e) = tx
+                            .send(ParsedArticle {
+                                group: "error".to_string(),
+                                article_id,
+                                metadata: None,
+                                patch: None,
+                                baseline: None,
+                                failed_error: Some(error),
+                            })
+                            .await
+                        {
+                            error!("Failed to forward IngestionFailed event: {}", e);
+                        }
+                    }
                     Event::PatchSubmitted {
                         group,
                         article_id,
@@ -206,9 +221,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .send(ParsedArticle {
                                 group,
                                 article_id,
-                                metadata,
+                                metadata: Some(metadata),
                                 patch,
                                 baseline: base_commit,
+                                failed_error: None,
                             })
                             .await
                         {
@@ -240,9 +256,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .send(ParsedArticle {
                                         group,
                                         article_id,
-                                        metadata,
+                                        metadata: Some(metadata),
                                         patch: patch_opt,
                                         baseline,
+                                        failed_error: None,
                                     })
                                     .await
                                 {
@@ -389,7 +406,29 @@ async fn process_parsed_article(worker_db: &Database, article: ParsedArticle) ->
         metadata,
         patch,
         baseline,
+        failed_error,
     } = article;
+
+    // Handle ingestion failure
+    if let Some(err) = failed_error {
+        info!("Handling ingestion failure for {}: {}", article_id, err);
+        if let Err(e) = worker_db.update_patchset_error(&article_id, &err).await {
+            error!("Failed to update patchset error in DB: {}", e);
+        }
+        return ProcessStatus::Ingested; // Successfully handled the failure event
+    }
+
+    let metadata = match metadata {
+        Some(m) => m,
+        None => {
+            error!(
+                "Missing metadata for article {} (group: {})",
+                article_id, group
+            );
+            return ProcessStatus::Error;
+        }
+    };
+
     let patch_opt = patch;
 
     // Resolve baseline ID if provided
@@ -527,7 +566,7 @@ async fn process_parsed_article(worker_db: &Database, article: ParsedArticle) ->
     );
     */
 
-    let cover_letter_id = if metadata.index == 0 {
+    let cover_letter_id = if metadata.index == 0 || metadata.total == 1 {
         Some(metadata.message_id.as_str())
     } else {
         None

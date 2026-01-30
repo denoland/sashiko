@@ -150,6 +150,12 @@ async fn submit_patch(
             let id = generate_synthetic_id("local");
             info!("Received local patch submission: {}", id);
 
+            // Create a placeholder record so the user can track status immediately
+            if let Err(e) = state.db.create_fetching_patchset(&id, &subject).await {
+                error!("Failed to create placeholder for local patch: {}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+
             let event = Event::PatchSubmitted {
                 group: "api-submit".to_string(),
                 article_id: id.clone(),
@@ -175,14 +181,18 @@ async fn submit_patch(
             }))
         }
         SubmitRequest::Remote { sha, repo } => {
-            // Use the SHA as the ID or generate one?
-            // If we use SHA, it's unique but multiple requests for same SHA might conflict if we assume ID uniqueness in DB.
-            // But Git SHAs are unique content-wise.
-            // Let's use the SHA as the ID for tracking simplicity if the user provides it.
-            // Actually, `article_id` in DB is unique.
-            // Using the SHA directly as ID is good.
             let id = sha.clone();
             info!("Received remote fetch request: {} from {}", sha, repo);
+
+            // Create a placeholder record in the DB so the user can track status
+            if let Err(e) = state
+                .db
+                .create_fetching_patchset(&id, &format!("Fetching commit {}...", &sha[..8]))
+                .await
+            {
+                error!("Failed to create placeholder patchset: {}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
 
             let req = FetchRequest {
                 repo_url: repo,

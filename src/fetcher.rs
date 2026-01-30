@@ -77,6 +77,15 @@ impl FetchAgent {
 
             if let Err(e) = self.ensure_remote(&remote_name, &url).await {
                 error!("Failed to ensure remote {}: {}", url, e);
+                for commit in commit_list {
+                    let _ = self
+                        .main_tx
+                        .send(Event::IngestionFailed {
+                            article_id: commit,
+                            error: format!("Failed to set up remote {}: {}", url, e),
+                        })
+                        .await;
+                }
                 continue;
             }
 
@@ -91,6 +100,15 @@ impl FetchAgent {
                 // 2. Fallback: Fetch everything (heads)
                 if let Err(e) = self.fetch_all(&remote_name).await {
                     error!("Full fetch failed for {}: {}", url, e);
+                    for commit in commit_list {
+                        let _ = self
+                            .main_tx
+                            .send(Event::IngestionFailed {
+                                article_id: commit,
+                                error: format!("Failed to fetch from {}: {}", url, e),
+                            })
+                            .await;
+                    }
                     continue;
                 }
             }
@@ -107,6 +125,13 @@ impl FetchAgent {
                     }
                     Err(e) => {
                         error!("Failed to extract patch {}: {}", commit, e);
+                        let _ = self
+                            .main_tx
+                            .send(Event::IngestionFailed {
+                                article_id: commit,
+                                error: format!("Failed to extract patch: {}", e),
+                            })
+                            .await;
                     }
                 }
             }

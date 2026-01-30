@@ -20,13 +20,18 @@ pub enum Event {
         base_commit: Option<String>,
         timestamp: i64,
     },
+    IngestionFailed {
+        article_id: String,
+        error: String,
+    },
 }
 
 #[derive(Debug)]
 pub struct ParsedArticle {
     pub group: String,
     pub article_id: String,
-    pub metadata: PatchsetMetadata,
+    pub metadata: Option<PatchsetMetadata>,
     pub patch: Option<Patch>,
     pub baseline: Option<String>,
+    pub failed_error: Option<String>,
 }
