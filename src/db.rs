@@ -803,6 +803,44 @@ impl Database {
             }
         }
 
+        // Reviews stats (outcomes over time)
+        let mut reviews_data = Vec::new();
+        if let Some(sid) = subsystem_id {
+            let sql = "SELECT 
+                strftime('%Y-%m-%d', r.created_at, 'unixepoch') as day,
+                r.status,
+                COUNT(*) as count
+            FROM reviews r
+            JOIN patchsets_subsystems ps ON r.patchset_id = ps.patchset_id
+            WHERE ps.subsystem_id = ?
+            GROUP BY day, status
+            ORDER BY day";
+            let mut rows = self.conn.query(sql, libsql::params![sid]).await?;
+            while let Ok(Some(row)) = rows.next().await {
+                if let Ok(day) = row.get::<String>(0) {
+                    let status: String = row.get(1).unwrap_or_else(|_| "unknown".to_string());
+                    let count: i64 = row.get(2)?;
+                    reviews_data.push(json!({"day": day, "status": status, "count": count}));
+                }
+            }
+        } else {
+            let sql = "SELECT 
+                strftime('%Y-%m-%d', r.created_at, 'unixepoch') as day,
+                r.status,
+                COUNT(*) as count
+            FROM reviews r
+            GROUP BY day, status
+            ORDER BY day";
+            let mut rows = self.conn.query(sql, ()).await?;
+            while let Ok(Some(row)) = rows.next().await {
+                if let Ok(day) = row.get::<String>(0) {
+                    let status: String = row.get(1).unwrap_or_else(|_| "unknown".to_string());
+                    let count: i64 = row.get(2)?;
+                    reviews_data.push(json!({"day": day, "status": status, "count": count}));
+                }
+            }
+        }
+
         // Findings stats
         let mut findings_data = Vec::new();
         if let Some(sid) = subsystem_id {
@@ -859,6 +897,7 @@ impl Database {
             "messages": messages_data,
             "patchsets": patchsets_data,
             "patches": patches_data,
+            "reviews": reviews_data,
             "findings": findings_data
         }))
     }

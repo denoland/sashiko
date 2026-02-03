@@ -1946,7 +1946,14 @@
                 html += renderStatCard('Total Reviews', totalReviews);
                 html += renderStatCard('Success Rate', totalReviews ? Math.round(successful / totalReviews * 100) + '%' : '-');
                 html += renderStatCard('Failures', failed);
+                html += '</div>';
+                
+                html += '<h3>Review Outcomes</h3><div class="chart-section"><div id="chart-review-outcomes" style="width:100%; height:300px;"></div></div>';
 
+                html += '<h3>Reviews Breakdown</h3><div class="chart-section"><div id="chart-reviews" style="width:100%; height:400px;"></div></div>';
+
+                html += '<h2>Tool Usage</h2><div class="chart-section"><div id="chart-tools" style="width:100%; height:500px;"></div></div>';
+                
                 // Calculate total tokens
                 const totalTokensIn = reviews.reduce((acc, r) => acc + (r.tokens_in || 0), 0);
                 const totalTokensOut = reviews.reduce((acc, r) => acc + (r.tokens_out || 0), 0);
@@ -1957,14 +1964,12 @@
                 const avgTokensOut = totalReviews ? Math.round(totalTokensOut / totalReviews) : 0;
                 const avgTokensCached = totalReviews ? Math.round(totalTokensCached / totalReviews) : 0;
 
+                html += '<h3>Token Usage</h3><div class="stat-card-grid">';
                 html += renderStatCard('Input tokens/patch', avgTokensIn);
                 html += renderStatCard('Cached tokens/patch', avgTokensCached);
                 html += renderStatCard('Out tokens/patch', avgTokensOut);
                 html += '</div>';
 
-                html += '<h3>Reviews Breakdown</h3><div class="chart-section"><div id="chart-reviews" style="width:100%; height:400px;"></div></div>';
-
-                html += '<h2>Tool Usage</h2><div class="chart-section"><div id="chart-tools" style="width:100%; height:500px;"></div></div>';
                 html += '<h2>Findings Severity</h2><div class="chart-section"><div id="chart-findings" style="width:100%; height:300px;"></div></div>';
 
                 const container = document.getElementById('stats-content');
@@ -2001,6 +2006,51 @@
                     window.addEventListener('resize', () => chart.resize());
                 } else {
                     document.getElementById('chart-timeline').innerHTML = '<p class="loading">No timeline data available.</p>';
+                }
+
+                // --- 1.5. Review Outcomes Timeline ---
+                if (timeline.reviews && timeline.reviews.length) {
+                    const chart = echarts.init(document.getElementById('chart-review-outcomes'));
+                    const dates = [...new Set(timeline.reviews.map(r => r.day))].sort();
+                    
+                    const statuses = [...new Set(timeline.reviews.map(r => r.status))];
+                    
+                    // Custom colors for known statuses
+                    const getColor = (s) => {
+                         if (s === 'Reviewed') return colors.secondary;
+                         if (s === 'Pending') return colors.primary;
+                         if (s === 'Applying') return '#d67f05';
+                         if (s.toLowerCase().includes('failed')) return colors.failure;
+                         return null;
+                    };
+
+                    const series = statuses.map(s => {
+                        const style = {};
+                        const c = getColor(s);
+                        if (c) style.color = c;
+                        
+                        return {
+                            name: s,
+                            type: 'line',
+                            smooth: true,
+                            showSymbol: false,
+                            itemStyle: style,
+                            data: dates.map(d => timeline.reviews.find(r => r.day === d && r.status === s)?.count || 0)
+                        };
+                    });
+
+                    const option = {
+                        tooltip: { trigger: 'axis' },
+                        legend: { data: statuses, bottom: 0 },
+                        grid: { left: '3%', right: '4%', bottom: '10%', top: '10%', containLabel: true },
+                        xAxis: { type: 'category', data: dates, splitLine: { show: false }, axisLine: { lineStyle: { color: '#ccc' } } },
+                        yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed' } } },
+                        series: series
+                    };
+                    chart.setOption(option);
+                    window.addEventListener('resize', () => chart.resize());
+                } else {
+                     document.getElementById('chart-review-outcomes').innerHTML = '<p class="loading">No review history available.</p>';
                 }
 
                 // --- 2. Reviews Chart ---
@@ -2101,8 +2151,9 @@
                     const series = severities.map(sev => {
                         return {
                             name: sev.charAt(0).toUpperCase() + sev.slice(1),
-                            type: 'bar',
-                            stack: 'total',
+                            type: 'line',
+                            smooth: true,
+                            showSymbol: false,
                             itemStyle: { color: severityColors[sev] },
                             data: dates.map(d => {
                                 const entry = timeline.findings.find(f => f.day === d && f.severity === sev);
@@ -2112,7 +2163,7 @@
                     });
 
                     const option = {
-                        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                        tooltip: { trigger: 'axis' },
                         legend: { data: severities.map(s => s.charAt(0).toUpperCase() + s.slice(1)), bottom: 0 },
                         grid: { left: '3%', right: '4%', bottom: '15%', top: '10%', containLabel: true },
                         xAxis: { type: 'category', data: dates, splitLine: { show: false }, axisLine: { lineStyle: { color: '#ccc' } } },
