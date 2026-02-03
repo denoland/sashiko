@@ -1469,24 +1469,27 @@ impl Database {
             // Check if this message is already part of this patchset (Duplicate processing)
             // 1. Is it the cover letter?
             let is_cover_duplicate = existing_cover_id.as_deref() == Some(message_id);
-            
+
             // 2. Is it an existing patch?
             let is_patch_duplicate = if !is_cover_duplicate {
-                let mut p_rows = self.conn.query(
-                    "SELECT 1 FROM patches WHERE patchset_id = ? AND message_id = ?",
-                    libsql::params![id, message_id]
-                ).await?;
+                let mut p_rows = self
+                    .conn
+                    .query(
+                        "SELECT 1 FROM patches WHERE patchset_id = ? AND message_id = ?",
+                        libsql::params![id, message_id],
+                    )
+                    .await?;
                 p_rows.next().await.ok().flatten().is_some()
             } else {
                 false
             };
-            
+
             let is_duplicate = is_cover_duplicate || is_patch_duplicate;
 
             // If the patchset is already full, do not merge more patches into it,
             // UNLESS it is a duplicate of a message already in the set.
             // This prevents merging unrelated patchsets that happen to look similar (same author/size).
-            if existing_received >= existing_total && !is_duplicate {
+            if existing_received >= existing_total && !is_duplicate && part_index != 0 {
                 continue;
             }
 
@@ -3365,9 +3368,20 @@ mod tests {
 
         let ps_part1 = db
             .create_patchset(
-                thread_id, None, "msg_conf_01", subject, author, 80005, 17, 1, "", "",
+                thread_id,
+                None,
+                "msg_conf_01",
+                subject,
+                author,
+                80005,
+                17,
+                1,
+                "",
+                "",
                 parsed_ver, // Pass the result of the potentially buggy parser
-                1, None, true,
+                1,
+                None,
+                true,
             )
             .await
             .unwrap()
@@ -3768,12 +3782,9 @@ mod tests {
         let db = setup_db().await;
 
         // 1. Create Patchset (1/1)
-        let t1 = db
-            .create_thread("root1", "Subject", 1000)
-            .await
-            .unwrap();
+        let t1 = db.create_thread("root1", "Subject", 1000).await.unwrap();
         let msg_id = "msg1";
-        
+
         db.create_message(
             msg_id,
             t1,
@@ -3844,13 +3855,16 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ps1, ps2, "Should merge duplicate into existing patchset even if full");
+        assert_eq!(
+            ps1, ps2,
+            "Should merge duplicate into existing patchset even if full"
+        );
 
         // 4. Try to ingest a NEW patch (different ID) that looks like it belongs
         // This simulates a collision or a separate series with same metadata.
         // It should NOT merge because the set is full and it's NOT a duplicate.
         let msg_id_new = "msg_new";
-         db.create_message(
+        db.create_message(
             msg_id_new,
             t1,
             None,
@@ -3887,6 +3901,9 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_ne!(ps1, ps3, "Should create NEW patchset for non-duplicate when full");
+        assert_ne!(
+            ps1, ps3,
+            "Should create NEW patchset for non-duplicate when full"
+        );
     }
 }
