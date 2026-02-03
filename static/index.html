@@ -798,12 +798,15 @@
                         if (isQuoted) {
                             isDefiniteDiff = true;
                         } else {
-                            if (!seenDiffOrQuote) isDefiniteDiff = true;
-                            else if (isMeta) isDefiniteDiff = true;
+                            if (isMeta) isDefiniteDiff = true;
+                            else if (inDiffBlock) {
+                                if (content.startsWith('+') && !content.startsWith('+++')) isDefiniteDiff = true;
+                                else if (content.startsWith('-') && !content.startsWith('---') && content.trim() !== '--') isDefiniteDiff = true;
+                                else if (content.startsWith(' ') || content.startsWith('\\') || content.startsWith('\t')) isDefiniteDiff = true;
+                            }
                         }
                     } else {
-                        if (!seenDiffOrQuote) isDefiniteDiff = true;
-                        else if (isMeta) isDefiniteDiff = true;
+                        if (isMeta) isDefiniteDiff = true;
                         else if (inDiffBlock) {
                              if (content.startsWith('+') && !content.startsWith('+++')) isDefiniteDiff = true;
                              else if (content.startsWith('-') && !content.startsWith('---')) isDefiniteDiff = true;
