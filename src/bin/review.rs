@@ -73,6 +73,10 @@ struct ReviewInput {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("CRITICAL ERROR: Panic detected: {}", info);
+    }));
+
     let no_color = std::env::var("NO_COLOR").is_ok();
     let plain_logs = std::env::var("SASHIKO_LOG_PLAIN").is_ok();
 
@@ -87,7 +91,7 @@ async fn main() -> Result<()> {
     }
 
     let args = Args::parse();
-    let settings = Settings::new().unwrap();
+    let settings = Settings::new().expect("Failed to load settings");
 
     // Data Loading: Always from Stdin (JSON)
     let mut buffer = String::new();

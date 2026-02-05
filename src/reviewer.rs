@@ -715,6 +715,7 @@ impl Reviewer {
                         let error_msg = json_output["error"]
                             .as_str()
                             .unwrap_or("Patch application failed");
+                        error!("Patch application failed for ps={} review={}: {}", patchset_id, review_id, error_msg);
                         let _ = ctx
                             .db
                             .update_review_status(
@@ -838,7 +839,7 @@ async fn run_review_tool(
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                if line.contains(" ERROR ") {
+                if line.contains(" ERROR ") || line.starts_with("Error:") || line.contains("panicked") {
                     error!("[review-bin] {}", line);
                 } else if line.contains(" WARN ") {
                     warn!("[review-bin] {}", line);
