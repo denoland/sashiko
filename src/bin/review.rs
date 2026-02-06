@@ -544,7 +544,10 @@ async fn apply_single_patch(
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
                 if status == "failed" {
-                    info!("Failed to apply patch {}: {}", p.index, stderr);
+                    info!(
+                        "Failed to apply patch {}. stdout: {}\nstderr: {}",
+                        p.index, stdout, stderr
+                    );
                 }
 
                 patch_results.push(json!({

@@ -655,7 +655,10 @@ impl Reviewer {
                                     .await;
                                 return Ok(PatchResult::Success);
                             } else if ctx.settings.ai.no_ai {
-                                info!("Review skipped as requested for ps={} idx={}", patchset_id, index);
+                                info!(
+                                    "Review skipped as requested for ps={} idx={}",
+                                    patchset_id, index
+                                );
                                 let _ = ctx
                                     .db
                                     .complete_review(
@@ -1102,10 +1105,40 @@ async fn run_review_tool(
                         for p in patches {
                             let idx = p["index"].as_i64().unwrap_or(0);
                             let status = p["status"].as_str().unwrap_or("error");
-                            let stderr = p["stderr"].as_str();
+
+                            let stderr_str = p["stderr"].as_str().unwrap_or("");
+                            let stdout_str = p["stdout"].as_str().unwrap_or("");
+                            let am_error = p["am_error"].as_str().unwrap_or("");
+
+                            let mut full_log = String::new();
+                            if !am_error.is_empty() {
+                                full_log.push_str("git am error:\n");
+                                full_log.push_str(am_error);
+                                full_log.push_str("\n\n");
+                            }
+                            if !stdout_str.is_empty() {
+                                full_log.push_str("stdout:\n");
+                                full_log.push_str(stdout_str);
+                                full_log.push('\n');
+                            }
+                            if !stderr_str.is_empty() {
+                                full_log.push_str("stderr:\n");
+                                full_log.push_str(stderr_str);
+                            }
+
+                            let error_msg = if full_log.trim().is_empty() {
+                                None
+                            } else {
+                                Some(full_log.as_str())
+                            };
 
                             if let Err(e) = db
-                                .update_patch_application_status(patchset_id, idx, status, stderr)
+                                .update_patch_application_status(
+                                    patchset_id,
+                                    idx,
+                                    status,
+                                    error_msg,
+                                )
                                 .await
                             {
                                 error!(

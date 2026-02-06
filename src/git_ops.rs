@@ -110,7 +110,8 @@ impl GitWorktree {
                 .await;
 
             return Err(anyhow!(
-                "git am failed: {}",
+                "git am failed. stdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             ));
         }
@@ -744,6 +745,62 @@ mod tests {
         // Test with Branch: feature (is C2) -> C2 (as range start)
         let base = get_range_base(&repo_path, "feature").await?;
         assert_eq!(base, c2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_apply_patch_failure() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let repo_path = temp_dir.path().to_path_buf();
+
+        // Init git repo
+        Command::new("git")
+            .current_dir(&repo_path)
+            .args(["init"])
+            .output()
+            .await?;
+        Command::new("git")
+            .current_dir(&repo_path)
+            .args(["config", "user.email", "test@example.com"])
+            .output()
+            .await?;
+        Command::new("git")
+            .current_dir(&repo_path)
+            .args(["config", "user.name", "Test User"])
+            .output()
+            .await?;
+
+        // Create a dummy file
+        let file_path = repo_path.join("test.txt");
+        let mut file = File::create(&file_path)?;
+        writeln!(file, "Hello World")?;
+        Command::new("git")
+            .current_dir(&repo_path)
+            .args(["add", "."])
+            .output()
+            .await?;
+        Command::new("git")
+            .current_dir(&repo_path)
+            .args(["commit", "-m", "Initial commit"])
+            .output()
+            .await?;
+        let head_hash = get_commit_hash(&repo_path, "HEAD").await?;
+
+        // Create a worktree
+        let worktree = GitWorktree::new(&repo_path, &head_hash, None).await?;
+
+        // Try to apply a bad patch
+        let bad_patch = "Invalid patch content";
+        let result = worktree.apply_patch(bad_patch).await;
+
+        assert!(result.is_err());
+        let err_msg = result.err().unwrap().to_string();
+
+        // Check if stdout and stderr are mentioned in the error message
+        assert!(err_msg.contains("stdout:"));
+        assert!(err_msg.contains("stderr:"));
+        assert!(err_msg.contains("git am failed"));
 
         Ok(())
     }
