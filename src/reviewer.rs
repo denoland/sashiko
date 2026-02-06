@@ -381,7 +381,13 @@ impl Reviewer {
             }
         };
 
-        let worktree = match GitWorktree::new(&repo_path, &baseline_sha, None).await {
+        let worktree = match GitWorktree::new(
+            &repo_path,
+            &baseline_sha,
+            Some(Path::new(&ctx.settings.review.worktree_dir)),
+        )
+        .await
+        {
             Ok(wt) => wt,
             Err(e) => {
                 error!("Failed to create worktree: {}", e);
