@@ -636,7 +636,7 @@ impl Database {
     pub async fn migrate_tool_usages(&self) -> Result<()> {
         // 1. Check if we have logs to parse
         info!("Migration: Checking for tool usages to backfill...");
-        let mut rows = self.conn.query("SELECT id, logs, provider, model_name FROM reviews WHERE status IN ('Reviewed', 'Failed') AND logs IS NOT NULL", ()).await?;
+        let mut rows = self.conn.query("SELECT id, logs, provider, model FROM reviews WHERE status IN ('Reviewed', 'Failed') AND logs IS NOT NULL", ()).await?;
 
         while let Ok(Some(row)) = rows.next().await {
             let review_id: i64 = row.get(0)?;
@@ -971,7 +971,7 @@ impl Database {
     pub async fn get_review_stats(&self) -> Result<serde_json::Value> {
         let sql = "SELECT 
             r.provider, 
-            r.model_name, 
+            r.model, 
             r.status, 
             count(*),
             sum(COALESCE(ai.tokens_in, 0)),
@@ -979,7 +979,7 @@ impl Database {
             sum(COALESCE(ai.tokens_cached, 0))
         FROM reviews r
         LEFT JOIN ai_interactions ai ON r.interaction_id = ai.id
-        GROUP BY r.provider, r.model_name, r.status";
+        GROUP BY r.provider, r.model, r.status";
 
         let mut rows = self.conn.query(sql, ()).await?;
         let mut stats = Vec::new();
