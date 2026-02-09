@@ -1509,7 +1509,7 @@
                                     <td style="padding:6px; border-bottom:1px solid #eee;">${escapeHtml(item.baseline)}</td>
                                     <td style="padding:6px; border-bottom:1px solid #eee;">${statusBadge}</td>
                                     <td style="padding:6px; border-bottom:1px solid #eee; text-align:right;">
-                                        <a href="#/log/baseline/${encodeURIComponent(data.id || data.message_id)}/${idx}" class="copy-btn" style="text-decoration:none; padding:3px 8px; font-weight:normal; font-size:0.85em;">View Log</a>
+                                        <a href="#/log/baseline/${encodeURIComponent(data.id || data.message_id)}/${idx}" style="font-weight:600; color:#666; text-decoration:none; font-size:0.85em;" onmouseover="this.style.color='#007bff'" onmouseout="this.style.color='#666'">View Log</a>
                                     </td>
                                 </tr>
                              `;
