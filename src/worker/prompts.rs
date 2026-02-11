@@ -20,22 +20,18 @@ use tokio::fs;
 /// System identity prompt - used across all AI interactions
 pub const SYSTEM_IDENTITY: &str = "You're an expert Linux kernel developer and upstream maintainer with deep knowledge of Linux kernel, Operating Systems, CPU architectures, modern hardware and Linux kernel community standards and processes.";
 
-pub const TASK_INSTRUCTION: &str = "You must produce the following outputs:\n\
-1. 'review-inline.txt': If you have ANY findings (count > 0), regardless of severity. This file *MUST* follow the format and guidelines provided in `inline-template.md`.\n\
-2. Final JSON Output: Your final response must be a valid JSON object strictly following the schema below. \
-Ignore any previous instructions to generate a separate 'review-metadata.json' file; only provide this JSON in your final response.\n\n\
-JSON Output Schema:\n\
+pub const TASK_INSTRUCTION: &str = "Important: you *MUST* produce the following outputs:\n\
+1. `review-inline.txt`: If you have ANY findings (count > 0), regardless of severity. This file *MUST* follow the format and guidelines provided in `inline-template.md`.\n\
+2. Final JSON Output: Your final response must be a valid JSON object strictly following the JSON schema:\n\
 {\n\
-  \"analysis_trace\": [\"step 1\", \"step 2\"],\n\
-  \"verdict\": \"Brief verdict\",\n\
-  \"findings\": [\n\
-    {\n\
-      \"severity\": \"Critical|High|Medium|Low\",\n\
-      \"severity_explanation\": \"Why this severity was chosen\",\n\
-      \"problem\": \"Description of the finding\",\n\
-      \"suggestion\": \"Optional code suggestion\"\n\
-    }\n\
-  ]\n\
+\"findings\": [\n\
+{\n\
+\"problem\": \"Detailed description of the problem\",\n\
+\"severity\": \"Critical|High|Medium|Low\",\n\
+\"severity_explanation\": \"Why this severity was chosen: e.g. memory leak on a hot path\",\n\
+\"suggestion\": \"Optional fix suggestion\"\n\
+}\n\
+]\n\
 }";
 
 /// Files to exclude from context building
@@ -86,7 +82,7 @@ impl PromptRegistry {
             Ok(SYSTEM_IDENTITY.to_string())
         } else {
             Ok(format!(
-                "{} Using the prompt review-core.md run a deep dive regression analysis of the top commit in the Linux source tree.\n\n\
+                "{} Load the protocol from `review-core.md` and run a deep dive regression analysis as described in the protocol of the top commit in the Linux source tree.\n\n\
                  {}",
                 SYSTEM_IDENTITY, TASK_INSTRUCTION
             ))
@@ -333,7 +329,7 @@ mod tests {
         assert!(prompt.contains(SYSTEM_IDENTITY));
         assert!(!prompt.contains("## Review Protocol"));
         assert!(!prompt.contains("Protocol content"));
-        assert!(prompt.contains("Using the prompt review-core.md"));
+        assert!(prompt.contains("Load the protocol from `review-core.md`"));
     }
 
     #[tokio::test]
@@ -380,7 +376,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let registry = PromptRegistry::new(temp_dir.path().to_path_buf());
         let context = registry.build_context().await.unwrap();
-        assert!(context.contains("You must produce the following outputs"));
+        assert!(context.contains("Important: you *MUST* produce the following outputs"));
     }
 
     #[tokio::test]
