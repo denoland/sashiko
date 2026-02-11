@@ -248,7 +248,7 @@ impl Worker {
                         "items": { "type": "string" },
                         "description": "Step-by-step analysis trace."
                     },
-                    "summary": { "type": "string", "description": "High-level summary of the review." },
+                    "summary": { "type": "string", "description": "High-level summary of the original change being reviewed." },
                     "findings": {
                         "type": "array",
                         "items": {
