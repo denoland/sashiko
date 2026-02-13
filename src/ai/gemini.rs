@@ -826,7 +826,7 @@ impl AiProvider for GeminiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::{AiMessage, AiRole, ToolCall};
+    use crate::ai::{AiMessage, AiResponseFormat, AiRole, AiTool, ToolCall};
     use serde_json::json;
 
     #[test]
@@ -989,5 +989,146 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_translate_ai_request_json_format() -> Result<()> {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "score": {"type": "number"}
+            }
+        });
+        let request = AiRequest {
+            messages: vec![AiMessage {
+                role: AiRole::User,
+                content: Some("Score this.".to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            tools: None,
+            temperature: None,
+            response_format: Some(AiResponseFormat::Json {
+                schema: Some(schema.clone()),
+            }),
+            preloaded_context: None,
+        };
+
+        let gemini_req = translate_ai_request(request)?;
+        let config = gemini_req.generation_config.unwrap();
+
+        assert_eq!(
+            config.response_mime_type.as_deref(),
+            Some("application/json")
+        );
+        assert_eq!(config.response_schema.as_ref(), Some(&schema));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_translate_ai_request_conversation_chain() -> Result<()> {
+        let request = AiRequest {
+            messages: vec![
+                AiMessage {
+                    role: AiRole::User,
+                    content: Some("Use tool".to_string()),
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+                AiMessage {
+                    role: AiRole::Assistant,
+                    content: None,
+                    tool_calls: Some(vec![ToolCall {
+                        id: "c1".to_string(),
+                        function_name: "t1".to_string(),
+                        arguments: json!({}),
+                        thought_signature: Some("s1".to_string()),
+                    }]),
+                    tool_call_id: None,
+                },
+                AiMessage {
+                    role: AiRole::Tool,
+                    content: Some("{\"ok\":true}".to_string()),
+                    tool_calls: None,
+                    tool_call_id: Some("c1".to_string()),
+                },
+            ],
+            tools: Some(vec![AiTool {
+                name: "t1".to_string(),
+                description: "d1".to_string(),
+                parameters: json!({}),
+            }]),
+            temperature: None,
+            response_format: None,
+            preloaded_context: None,
+        };
+
+        let gemini_req = translate_ai_request(request)?;
+
+        assert_eq!(gemini_req.contents.len(), 3);
+        assert_eq!(gemini_req.contents[0].role, "user");
+        assert_eq!(gemini_req.contents[1].role, "model");
+        assert_eq!(gemini_req.contents[2].role, "function");
+
+        // Verify thought signature in middle of chain
+        if let Part::FunctionCall {
+            thought_signature, ..
+        } = &gemini_req.contents[1].parts[0]
+        {
+            assert_eq!(thought_signature.as_deref(), Some("s1"));
+        } else {
+            panic!("Expected FunctionCall in middle of chain");
+        }
+
+        assert!(gemini_req.tools.is_some());
+        assert_eq!(
+            gemini_req.tools.as_ref().unwrap()[0].function_declarations[0].name,
+            "t1"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_estimate_tokens_logic() {
+        let request = AiRequest {
+            messages: vec![
+                AiMessage {
+                    role: AiRole::User,
+                    content: Some("Short message".to_string()),
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+                AiMessage {
+                    role: AiRole::Assistant,
+                    content: None,
+                    tool_calls: Some(vec![ToolCall {
+                        id: "c1".to_string(),
+                        function_name: "my_function".to_string(),
+                        arguments: json!({"key": "value"}),
+                        thought_signature: None,
+                    }]),
+                    tool_call_id: None,
+                },
+            ],
+            tools: Some(vec![AiTool {
+                name: "my_function".to_string(),
+                description: "Does something".to_string(),
+                parameters: json!({"type": "object"}),
+            }]),
+            temperature: None,
+            response_format: None,
+            preloaded_context: None,
+        };
+
+        let tokens = estimate_tokens_generic(&request);
+        // "Short message" is ~2-3 tokens
+        // "my_function" is ~2 tokens
+        // "{\"key\": \"value\"}" is ~7 tokens
+        // tool metadata...
+        // Total should be around 20-40 tokens.
+        assert!(tokens > 10);
+        assert!(tokens < 200);
     }
 }
