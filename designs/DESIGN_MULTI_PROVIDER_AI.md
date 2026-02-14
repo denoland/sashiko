@@ -1,7 +1,7 @@
 # DESIGN: Multi-Provider AI Architecture
 
 ## Context
-Sashiko is currently tightly coupled to the Google Gemini API. To ensure long-term flexibility and allow users to use their preferred models (OpenAI, Anthropic, Local LLMs), we need to abstract the AI interaction layer.
+Sashiko is currently tightly coupled to the Google Gemini API. To ensure long-term flexibility and allow users to use their preferred models (Anthropic, Local LLMs), we need to abstract the AI interaction layer.
 
 ## Proposed Changes
 
@@ -33,7 +33,7 @@ The `Settings.toml` will be updated to allow selecting a provider and model, but
 
 ```toml
 [ai]
-provider = "openai" # or "gemini", "anthropic", "ollama"
+provider = "gemini" # or "anthropic", "ollama"
 model = "gpt-4o"
 ```
 
@@ -41,7 +41,6 @@ model = "gpt-4o"
 To maintain security and follow current Sashiko patterns, API keys will be sourced exclusively from environment variables. The `ProviderFactory` will look for the following variables based on the active provider:
 
 - `LLM_API_KEY`: A generic variable (current behavior, can be used for the active provider).
-- `OPENAI_API_KEY`: Specific to OpenAI.
 - `ANTHROPIC_API_KEY`: Specific to Anthropic.
 - `GEMINI_API_KEY`: Specific to Gemini.
 
@@ -55,7 +54,6 @@ The `Reviewer` and `Worker` (in `src/worker/`) will no longer care which model i
 
 ## Alternatives Considered
 
-- **OpenAI-API Standardization:** Forcing all providers to use the OpenAI-compatible format. This is simpler but loses access to unique features of other models (like Gemini's native PDF support or Anthropic's specific caching headers).
 - **External Proxy:** Using an external tool like LiteLLM. While efficient, it adds a mandatory external dependency for users who just want to use a single API key.
 
 ## Refactor Plan
@@ -63,4 +61,4 @@ The `Reviewer` and `Worker` (in `src/worker/`) will no longer care which model i
 1. **Phase 1: Abstraction.** Create `src/ai/mod.rs` with the trait and generic types.
 2. **Phase 2: Gemini Adapter.** Refactor the existing Gemini code to implement the new `AiProvider` trait.
 3. **Phase 3: Reviewer Update.** Update `src/reviewer.rs` to use the trait instead of `GeminiClient`.
-4. **Phase 4: New Providers.** Implement OpenAI and Anthropic adapters.
+4. **Phase 4: New Providers.** Implement Anthropic and open model adapters.
