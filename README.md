@@ -23,7 +23,7 @@ Sashiko is based on the set of carefully crafted prompts to guide the AI in its 
 
 - **Rust**: Version 1.86 or later.
 - **Git**: For managing the repository and kernel tree.
-- **LLM Provider API Key**: Access to an LLM provider (e.g., Google's Gemini).
+- **LLM Provider API Key**: Access to an LLM provider (e.g., Google's Gemini or Anthropic's Claude).
 
 ## Setup
 
@@ -64,6 +64,41 @@ Sashiko is based on the set of carefully crafted prompts to guide the AI in its 
     ```bash
     export LLM_API_KEY="your_api_key_here"
     ```
+
+    ### Claude Setup
+
+    Sashiko supports Anthropic's Claude models via the Claude API.
+
+    **Get an API key**: https://console.anthropic.com/
+
+    **Configure environment**:
+    ```bash
+    export ANTHROPIC_API_KEY="sk-ant-..."
+    # Or use the generic key (LLM_API_KEY serves as fallback):
+    export LLM_API_KEY="sk-ant-..."
+    ```
+
+    **Update Settings.toml**:
+    ```toml
+    [ai]
+    provider = "claude"
+    model = "claude-sonnet-4-5"
+    max_input_tokens = 180000
+
+    [ai.claude]
+    prompt_caching = true
+    ```
+
+    **Supported models**:
+    - `claude-sonnet-4-5` - Recommended (200K context, balanced quality/cost/speed)
+    - `claude-opus-4-5` - Highest quality (1M context)
+    - `claude-haiku-4-5` - Fastest and cheapest
+
+    **Features**:
+    - Automatic prompt caching (5-minute TTL) reduces costs for repeated context
+    - Full tool/function calling support for git operations
+    - Automatic retry logic for rate limits and API overload
+    - 200K context window for claude-sonnet-4-5 (use max_input_tokens = 180000 for safety margin)
 
 3.  **Build**:
     ```bash
