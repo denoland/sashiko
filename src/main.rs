@@ -30,7 +30,7 @@ struct Cli {
     #[arg(long)]
     download: Option<usize>,
 
-    /// Enable tracking of configured mailing lists (replaces --nntp)
+    /// Enable tracking of configured mailing lists
     #[arg(long)]
     track: bool,
 
