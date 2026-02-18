@@ -382,18 +382,26 @@ async fn main() -> Result<()> {
                         let prompts = PromptRegistry::new(args.prompts.clone());
 
                         // Calculate series range (baseline..last_patch)
-                        let series_range = patches
-                            .iter()
-                            .map(|p| p.index)
-                            .max()
-                            .and_then(|max_idx| {
-                                patches
-                                    .iter()
-                                    .find(|p| p.index == max_idx)
-                                    .and_then(|p| p.commit_id.clone())
-                                    .or_else(|| patch_shas.get(&max_idx).cloned())
-                            })
-                            .map(|end_sha| format!("{}..{}", baseline_sha, end_sha));
+                        let max_patch_index = patches.iter().map(|p| p.index).max().unwrap_or(0);
+                        let is_last_patch_review = patches_to_review.len() == 1
+                            && patches_to_review[0].index == max_patch_index;
+
+                        let series_range = if is_last_patch_review {
+                            None
+                        } else {
+                            patches
+                                .iter()
+                                .map(|p| p.index)
+                                .max()
+                                .and_then(|max_idx| {
+                                    patches
+                                        .iter()
+                                        .find(|p| p.index == max_idx)
+                                        .and_then(|p| p.commit_id.clone())
+                                        .or_else(|| patch_shas.get(&max_idx).cloned())
+                                })
+                                .map(|end_sha| format!("{}..{}", baseline_sha, end_sha))
+                        };
 
                         let mut worker = Worker::new(
                             provider,
