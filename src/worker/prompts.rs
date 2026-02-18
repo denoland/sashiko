@@ -115,7 +115,7 @@ impl PromptRegistry {
 
         if let Some(range) = series_range {
             prompt.push_str(&format!(
-                "\n\nCheck every finding on being present at the end of the series. If the bug was fixed within the series (range: {}), it should not be reported in the final report.",
+                "\n\nImportant: Check every finding on being present at the end of the series. Use the `git_checkout` tool to check out the desired commit. If the bug was fixed within the series (range: {}), it should not be reported in the final report. Do not skip this check!",
                 range
             ));
         }
