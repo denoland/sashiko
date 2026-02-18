@@ -223,6 +223,8 @@ impl Worker {
         let mut final_history_before_pruning = Vec::new();
         let mut final_history_after_pruning = Vec::new();
 
+        let re_json_fallback = Regex::new(r"(?s)\{.*\}").unwrap();
+
         loop {
             turns += 1;
             if turns > self.max_interactions {
@@ -352,40 +354,38 @@ impl Worker {
 
                     session_tool_history.push((call.function_name.clone(), call.arguments.clone()));
 
-                    if same_call_count > 0 {
-                        if same_call_count >= 2 {
-                            let error_msg = format!(
-                                "Error: Loop detected. You have already called tool '{}' with these exact arguments {} times. Please stop repeating yourself and proceed to the next step.",
-                                call.function_name,
-                                same_call_count + 1
-                            );
-                            warn!("{}", error_msg);
+                    if same_call_count >= 2 {
+                        let error_msg = format!(
+                            "Error: Loop detected. You have already called tool '{}' with these exact arguments {} times. Please stop repeating yourself and proceed to the next step.",
+                            call.function_name,
+                            same_call_count + 1
+                        );
+                        warn!("{}", error_msg);
 
-                            if same_call_count >= 10 {
-                                return Ok(WorkerResult {
-                                    output: None,
-                                    error: Some(format!(
-                                        "Terminating due to persistent tool loop: {}",
-                                        error_msg
-                                    )),
-                                    input_context: input_context.clone(),
-                                    history: self.history.clone(),
-                                    history_before_pruning: final_history_before_pruning,
-                                    history_after_pruning: final_history_after_pruning,
-                                    tokens_in: total_tokens_in,
-                                    tokens_out: total_tokens_out,
-                                    tokens_cached: total_tokens_cached,
-                                });
-                            }
-
-                            tool_responses.push(AiMessage {
-                                role: AiRole::Tool,
-                                content: Some(json!({ "error": error_msg }).to_string()),
-                                tool_calls: None,
-                                tool_call_id: Some(call.id.clone()),
+                        if same_call_count >= 10 {
+                            return Ok(WorkerResult {
+                                output: None,
+                                error: Some(format!(
+                                    "Terminating due to persistent tool loop: {}",
+                                    error_msg
+                                )),
+                                input_context: input_context.clone(),
+                                history: self.history.clone(),
+                                history_before_pruning: final_history_before_pruning,
+                                history_after_pruning: final_history_after_pruning,
+                                tokens_in: total_tokens_in,
+                                tokens_out: total_tokens_out,
+                                tokens_cached: total_tokens_cached,
                             });
-                            continue;
                         }
+
+                        tool_responses.push(AiMessage {
+                            role: AiRole::Tool,
+                            content: Some(json!({ "error": error_msg }).to_string()),
+                            tool_calls: None,
+                            tool_call_id: Some(call.id.clone()),
+                        });
+                        continue;
                     }
 
                     let result = match self
@@ -434,8 +434,7 @@ impl Worker {
                     Ok(v) => v,
                     Err(e) => {
                         // Fallback: try to find the first '{' and last '}'
-                        let re = Regex::new(r"(?s)\{.*\}").unwrap();
-                        if let Some(mat) = re.find(final_text.as_str()) {
+                        if let Some(mat) = re_json_fallback.find(final_text.as_str()) {
                             let possible_json = mat.as_str();
                             match serde_json::from_str(possible_json) {
                                 Ok(v) => v,

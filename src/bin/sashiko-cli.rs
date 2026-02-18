@@ -119,7 +119,7 @@ async fn main() -> Result<()> {
 
     let client = Client::new();
 
-    if let Err(e) = run_command(cli.command, &client, &base_url, cli.format, &settings).await {
+    if let Err(e) = run_command(cli.command, &client, &base_url, cli.format).await {
         print_colored(Color::Red, "Error: ");
         println!("{}", e);
         
@@ -147,7 +147,6 @@ async fn run_command(
     client: &Client,
     base_url: &str,
     format: OutputFormat,
-    settings: &Settings,
 ) -> Result<()> {
     match command {
         Commands::Submit {
@@ -156,7 +155,7 @@ async fn run_command(
             repo,
             baseline,
         } => {
-            handle_submit(client, base_url, input, r#type, repo, baseline, format, settings).await
+            handle_submit(client, base_url, input, r#type, repo, baseline, format).await
         }
         Commands::Status => handle_status(client, base_url, format).await,
         Commands::List {
@@ -176,7 +175,6 @@ async fn handle_submit(
     repo: Option<PathBuf>,
     baseline: Option<String>,
     format: OutputFormat,
-    _settings: &Settings,
 ) -> Result<()> {
     let url = format!("{}/api/submit", base_url);
 
@@ -369,7 +367,7 @@ async fn handle_list(
                     println!(" {:<50} {}", subject_display, date_display);
                 }
                 
-                println!("\nPage {} of {} (Total: {})", data.page, (data.total + data.per_page - 1) / data.per_page, data.total);
+                println!("\nPage {} of {} (Total: {})", data.page, data.total.div_ceil(data.per_page), data.total);
              }
         }
     } else {
