@@ -535,6 +535,7 @@ impl Reviewer {
                     .unwrap_or_default();
 
                 let mut applied = false;
+                let mut fast_path_taken = false;
 
                 // Optimization: If message_id is a valid SHA, just checkout it
                 if msg_id.len() == 40 && msg_id.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -548,7 +549,10 @@ impl Reviewer {
                     if next_is_sha {
                         // Fast path: verify existence only, skip checkout
                         match get_commit_hash(&worktree.path, msg_id).await {
-                            Ok(_) => applied = true,
+                            Ok(_) => {
+                                applied = true;
+                                fast_path_taken = true;
+                            }
                             Err(e) => {
                                 let msg = format!("Commit {} missing: {}\n", msg_id, e);
                                 info!("{}", msg);
@@ -601,7 +605,9 @@ impl Reviewer {
                 }
 
                 if applied {
-                    if let Ok(sha) = get_commit_hash(&worktree.path, "HEAD").await {
+                    if fast_path_taken {
+                        patch_commits.insert(*index, msg_id.clone());
+                    } else if let Ok(sha) = get_commit_hash(&worktree.path, "HEAD").await {
                         patch_commits.insert(*index, sha);
                     }
                 } else {
