@@ -333,8 +333,20 @@ impl Database {
         self.conn.execute_batch(schema).await?;
 
         // Consolidate 'Applying' and 'In Review' states
-        let _ = self.conn.execute("UPDATE patchsets SET status = 'In Review' WHERE status = 'Applying'", ()).await;
-        let _ = self.conn.execute("UPDATE reviews SET status = 'In Review' WHERE status = 'Applying'", ()).await;
+        let _ = self
+            .conn
+            .execute(
+                "UPDATE patchsets SET status = 'In Review' WHERE status = 'Applying'",
+                (),
+            )
+            .await;
+        let _ = self
+            .conn
+            .execute(
+                "UPDATE reviews SET status = 'In Review' WHERE status = 'Applying'",
+                (),
+            )
+            .await;
 
         // Manual migrations for existing tables
         let _ = self
@@ -1549,10 +1561,12 @@ impl Database {
                 ).await?;
 
                 if let Some(real_clid) = cover_letter_message_id {
-                    self.conn.execute(
-                        "UPDATE patchsets SET cover_letter_message_id = ? WHERE id = ?",
-                        libsql::params![real_clid, id],
-                    ).await?;
+                    self.conn
+                        .execute(
+                            "UPDATE patchsets SET cover_letter_message_id = ? WHERE id = ?",
+                            libsql::params![real_clid, id],
+                        )
+                        .await?;
                 }
 
                 if let Some(bid) = baseline_id {
@@ -2649,7 +2663,11 @@ impl Database {
         let count_ps = self
             .conn
             .execute(
-                format!("UPDATE patchsets SET status = '{}' WHERE status IN ('In Review', 'Reviewing')", status_pending).as_str(),
+                format!(
+                    "UPDATE patchsets SET status = '{}' WHERE status IN ('In Review', 'Reviewing')",
+                    status_pending
+                )
+                .as_str(),
                 (),
             )
             .await?;

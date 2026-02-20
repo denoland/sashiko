@@ -21,7 +21,10 @@ fn find_json_candidates(text: &str) -> Vec<Value> {
         if chars[i] == '{' {
             if let Some(end) = find_matching_brace(&chars, i) {
                 let candidate: String = chars[i..=end].iter().collect();
-                if let Ok(v) = serde_json::from_str(&candidate) {
+                let clean_candidate = crate::utils::clean_json_string(&candidate);
+                if let Ok(v) = serde_json::from_str(&clean_candidate)
+                    .or_else(|_| serde_json::from_str(&candidate))
+                {
                     candidates.push(v);
                     i = end + 1;
                     continue;
@@ -480,7 +483,7 @@ impl Worker {
                             role: AiRole::Tool,
                             content: Some(json!({ "error": error_msg }).to_string()),
                             thought: None,
-            tool_calls: None,
+                            tool_calls: None,
                             tool_call_id: Some(call.id.clone()),
                         });
                         continue;
@@ -502,7 +505,7 @@ impl Worker {
                         role: AiRole::Tool,
                         content: Some(result),
                         thought: None,
-            tool_calls: None,
+                        tool_calls: None,
                         tool_call_id: Some(call.id.clone()),
                     });
                 }
@@ -523,13 +526,18 @@ impl Worker {
                     }
                 }
 
-                let json_val: Value = match serde_json::from_str(clean_text) {
+                let cleaned_json = crate::utils::clean_json_string(clean_text);
+                let json_val: Value = match serde_json::from_str(&cleaned_json)
+                    .or_else(|_| serde_json::from_str(clean_text))
+                {
                     Ok(v) => v,
                     Err(e) => {
                         // Fallback: scan for JSON objects
                         let candidates = find_json_candidates(final_text.as_str());
                         let valid_candidate = candidates.into_iter().rev().find(|v| {
-                            v.get("findings").is_some() || v.get("summary").is_some() || v.get("review_inline").is_some()
+                            v.get("findings").is_some()
+                                || v.get("summary").is_some()
+                                || v.get("review_inline").is_some()
                         });
 
                         if let Some(v) = valid_candidate {
@@ -571,7 +579,7 @@ impl Worker {
                             role: AiRole::User,
                             content: Some(error_msg),
                             thought: None,
-            tool_calls: None,
+                            tool_calls: None,
                             tool_call_id: None,
                         });
                         continue;
@@ -588,7 +596,7 @@ impl Worker {
                             role: AiRole::User,
                             content: Some(error_msg),
                             thought: None,
-            tool_calls: None,
+                            tool_calls: None,
                             tool_call_id: None,
                         });
                         continue;

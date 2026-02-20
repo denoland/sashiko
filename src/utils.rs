@@ -35,6 +35,55 @@ pub fn redact_secret(s: &str) -> String {
     redacted_url.to_string()
 }
 
+/// Cleans a JSON string by escaping unescaped control characters inside string literals.
+///
+/// This is particularly useful for parsing LLM-generated JSON, which sometimes
+/// contains literal newlines or tabs inside string values instead of the
+/// correct escape sequences (`\n`, `\t`, etc.).
+pub fn clean_json_string(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut in_string = false;
+    let mut escape = false;
+
+    for c in input.chars() {
+        if in_string {
+            if escape {
+                out.push('\\');
+                out.push(c);
+                escape = false;
+            } else if c == '\\' {
+                escape = true;
+            } else if c == '"' {
+                out.push(c);
+                in_string = false;
+            } else if c == '\n' {
+                out.push_str("\\n");
+            } else if c == '\r' {
+                out.push_str("\\r");
+            } else if c == '\t' {
+                out.push_str("\\t");
+            } else if c < '\x20' {
+                use std::fmt::Write;
+                write!(&mut out, "\\u{:04x}", c as u32).unwrap();
+            } else {
+                out.push(c);
+            }
+        } else {
+            if c == '"' {
+                in_string = true;
+            }
+            out.push(c);
+        }
+    }
+
+    // If the string ended while still in an escape sequence
+    if escape {
+        out.push('\\');
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,5 +123,22 @@ mod tests {
         let s = "https://github.com/torvalds/linux.git";
         let redacted = redact_secret(s);
         assert_eq!(redacted, s);
+    }
+
+    #[test]
+    fn test_clean_json_string() {
+        let valid = r#"{"name": "test", "value": "a\nb"}"#;
+        assert_eq!(clean_json_string(valid), valid);
+
+        let invalid = "{\"name\": \"test\", \"value\": \"a\nb\"}";
+        let fixed = r#"{"name": "test", "value": "a\nb"}"#;
+        assert_eq!(clean_json_string(invalid), fixed);
+
+        let invalid_tab = "{\"key\": \"val\tue\"}";
+        let fixed_tab = r#"{"key": "val\tue"}"#;
+        assert_eq!(clean_json_string(invalid_tab), fixed_tab);
+
+        let structural = "{\n  \"key\": \"value\"\n}";
+        assert_eq!(clean_json_string(structural), structural);
     }
 }

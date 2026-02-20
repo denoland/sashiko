@@ -115,7 +115,7 @@ impl CacheManager {
                 role: AiRole::User,
                 content: Some(context_str),
                 thought: None,
-            tool_calls: None,
+                tool_calls: None,
                 tool_call_id: None,
             }],
             tools: self.tools.clone(),

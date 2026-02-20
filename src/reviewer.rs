@@ -1579,7 +1579,7 @@ mod tests {
             Ok(AiResponse {
                 content: Some("Mocked AI response".to_string()),
                 thought: None,
-            tool_calls: None,
+                tool_calls: None,
                 usage: None,
             })
         }
@@ -1729,7 +1729,7 @@ echo '{"patchset_id": 1, "patches": [{"index": 1, "status": "applied"}]}'
                     Ok(AiResponse {
                         content: Some("Success after refresh".to_string()),
                         thought: None,
-            tool_calls: None,
+                        tool_calls: None,
                         usage: None,
                     })
                 }
@@ -1856,7 +1856,7 @@ echo '{"patchset_id": 1, "patches": []}'
                 Ok(AiResponse {
                     content: Some("Ok".to_string()),
                     thought: None,
-            tool_calls: None,
+                    tool_calls: None,
                     usage: None,
                 })
             }

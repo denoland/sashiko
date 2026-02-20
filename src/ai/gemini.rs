@@ -704,7 +704,11 @@ fn translate_ai_response(resp: GenerateContentResponse) -> Result<AiResponse> {
 
     for part in &candidate.content.parts {
         match part {
-            Part::Text { text, thought: is_thought, .. } => {
+            Part::Text {
+                text,
+                thought: is_thought,
+                ..
+            } => {
                 if *is_thought {
                     thought.push_str(text);
                 } else {
@@ -867,14 +871,14 @@ mod tests {
                     role: AiRole::System,
                     content: Some("You are a helpful assistant.".to_string()),
                     thought: None,
-                tool_calls: None,
+                    tool_calls: None,
                     tool_call_id: None,
                 },
                 AiMessage {
                     role: AiRole::User,
                     content: Some("Hello!".to_string()),
                     thought: None,
-                tool_calls: None,
+                    tool_calls: None,
                     tool_call_id: None,
                 },
             ],
@@ -1073,14 +1077,14 @@ mod tests {
                     role: AiRole::User,
                     content: Some("Use tool".to_string()),
                     thought: None,
-                tool_calls: None,
+                    tool_calls: None,
                     tool_call_id: None,
                 },
                 AiMessage {
                     role: AiRole::Assistant,
                     content: None,
                     thought: None,
-                tool_calls: Some(vec![ToolCall {
+                    tool_calls: Some(vec![ToolCall {
                         id: "c1".to_string(),
                         function_name: "t1".to_string(),
                         arguments: json!({}),
@@ -1092,7 +1096,7 @@ mod tests {
                     role: AiRole::Tool,
                     content: Some("{\"ok\":true}".to_string()),
                     thought: None,
-                tool_calls: None,
+                    tool_calls: None,
                     tool_call_id: Some("c1".to_string()),
                 },
             ],
@@ -1141,14 +1145,14 @@ mod tests {
                     role: AiRole::User,
                     content: Some("Short message".to_string()),
                     thought: None,
-                tool_calls: None,
+                    tool_calls: None,
                     tool_call_id: None,
                 },
                 AiMessage {
                     role: AiRole::Assistant,
                     content: None,
                     thought: None,
-                tool_calls: Some(vec![ToolCall {
+                    tool_calls: Some(vec![ToolCall {
                         id: "c1".to_string(),
                         function_name: "my_function".to_string(),
                         arguments: json!({"key": "value"}),

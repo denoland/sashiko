@@ -50,7 +50,7 @@ mod tests {
                     "```json\n{\"summary\": \"Fallback\", \"findings\": []}\n```".to_string(),
                 ),
                 thought: None,
-            tool_calls: None,
+                tool_calls: None,
                 usage: Some(AiUsage {
                     prompt_tokens: 0,
                     completion_tokens: 0,
