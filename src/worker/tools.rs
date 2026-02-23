@@ -127,6 +127,16 @@ impl ToolBox {
                 }),
             },
             AiTool {
+                name: "git_log".to_string(),
+                description: "Show commit logs.".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "args": { "type": "array", "items": { "type": "string" }, "description": "Arguments for git log (e.g., ['-n', '3', '--oneline'])." }
+                    },
+                }),
+            },
+            AiTool {
                 name: "git_status".to_string(),
                 description: "Show the working tree status.".to_string(),
                 parameters: json!({
@@ -234,6 +244,7 @@ impl ToolBox {
             "git_blame" => self.git_blame(args).await,
             "git_diff" => self.git_diff(args).await,
             "git_show" => self.git_show(args).await,
+            "git_log" => self.git_log(args).await,
             "git_status" => self.git_status(args).await,
             "git_checkout" => self.git_checkout(args).await,
             "git_branch" => self.git_branch(args).await,
@@ -415,6 +426,29 @@ impl ToolBox {
 
         let content = String::from_utf8_lossy(&output.stdout).to_string();
         Ok(json!({ "content": Truncator::truncate_diff(&content, 10_000) }))
+    }
+
+    async fn git_log(&self, args: Value) -> Result<Value> {
+        let log_args_str: Vec<&str> = args["args"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default();
+
+        let output = Command::new("git")
+            .current_dir(&self.worktree_path)
+            .arg("log")
+            .args(&log_args_str)
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Ok(json!({ "error": format!("git log failed: {}", stderr) }));
+        }
+
+        Ok(
+            json!({ "output": self.truncate_output(String::from_utf8_lossy(&output.stdout).to_string()) }),
+        )
     }
 
     async fn git_show(&self, args: Value) -> Result<Value> {

@@ -63,6 +63,20 @@ mod tests {
     }
 
     #[test]
+    fn test_git_log() {
+        let (linux_path, _prompts_path) = get_test_paths();
+        let toolbox = ToolBox::new(linux_path, None);
+        let rt = Runtime::new().unwrap();
+
+        let args = json!({ "args": ["-n", "1"] });
+        let result = rt.block_on(toolbox.call("git_log", args)).unwrap();
+        let output = result["output"].as_str().unwrap();
+
+        assert!(output.contains("commit"));
+        assert!(output.contains("Author:"));
+    }
+
+    #[test]
     fn test_git_show_head() {
         let (linux_path, _prompts_path) = get_test_paths();
         let toolbox = ToolBox::new(linux_path, None);
