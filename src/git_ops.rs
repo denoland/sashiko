@@ -530,7 +530,7 @@ impl Default for GitLogParams {
     fn default() -> Self {
         Self {
             repo_path: PathBuf::new(),
-            limit: None,
+            limit: Some(100),
             rev_range: None,
             paths: Vec::new(),
             show_hash: true,

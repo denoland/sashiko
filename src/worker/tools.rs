@@ -132,7 +132,7 @@ impl ToolBox {
                 parameters: json!({
                     "type": "object",
                     "properties": {
-                        "args": { "type": "array", "items": { "type": "string" }, "description": "Arguments for git log (e.g., ['-n', '3', '--oneline'])." }
+                        "args": { "type": "array", "items": { "type": "string" }, "description": "Arguments for git log (e.g., ['-n', '3', '--oneline']). Bounded to 100 commits by default unless overridden." }
                     },
                 }),
             },
@@ -437,6 +437,7 @@ impl ToolBox {
         let output = Command::new("git")
             .current_dir(&self.worktree_path)
             .arg("log")
+            .args(["-n", "100"])
             .args(&log_args_str)
             .output()
             .await?;
