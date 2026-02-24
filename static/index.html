@@ -1374,6 +1374,9 @@
                 let listHtml = '';
                 if (patch && patch.status === 'Skipped') {
                     listHtml = '<p style="font-style:italic; color:#888;">Skipped.</p>';
+                } else if (reviews && reviews.length > 0 && reviews.every(r => r.status === 'Skipped')) {
+                    const reason = reviews[0].result || 'Skipped.';
+                    listHtml = `<p style="font-style:italic; color:#888;">${escapeHtml(reason)}</p>`;
                 } else {
                     listHtml = renderReviewList(reviews);
                 }
@@ -1398,54 +1401,65 @@
                     } else if (!reviews || reviews.length === 0) {
                         summaryStatus = '<span style="color:#888">No reviews</span>';
                     } else {                         // Aggregate "MAX" across all reviews for this patch
-                         let maxCounts = { low: 0, medium: 0, high: 0, critical: 0 };
-                         let hasSuccessful = false;
-                         let errors = [];
+                        let maxCounts = { low: 0, medium: 0, high: 0, critical: 0 };
+                        let hasSuccessful = false;
+                        let hasSkipped = false;
+                        let hasInProgress = false;
+                        let skippedReason = '';
+                        let errors = [];
 
-                         let validRunCount = 0;
-                         reviews.forEach(r => {
-                            if (r.status !== 'Failed To Apply') {
-                                validRunCount++;
-                            }
+                        let validRunCount = 0;
+                        reviews.forEach(r => {
+                           if (r.status !== 'Failed To Apply') {
+                               validRunCount++;
+                           }
 
-                            if (r.status === 'Reviewed') {
-                                hasSuccessful = true;
-                                try {
-                                    if (r.output) {
-                                        const out = typeof r.output === 'string' ? JSON.parse(r.output) : r.output;
-                                        if (out && out.findings && Array.isArray(out.findings)) {
-                                            let current = { low: 0, medium: 0, high: 0, critical: 0 };
-                                            out.findings.forEach(f => {
-                                                const s = String(f.severity || '').toLowerCase();
-                                                if (s === 'critical') current.critical++;
-                                                else if (s === 'high') current.high++;
-                                                else if (s === 'medium') current.medium++;
-                                                else current.low++;
-                                            });
-                                            
-                                            // Max aggregation
-                                            maxCounts.critical = Math.max(maxCounts.critical, current.critical);
-                                            maxCounts.high = Math.max(maxCounts.high, current.high);
-                                            maxCounts.medium = Math.max(maxCounts.medium, current.medium);
-                                            maxCounts.low = Math.max(maxCounts.low, current.low);
-                                        }
-                                    }
-                                } catch (e) {}
-                            } else if (r.status && (r.status.toLowerCase().includes('failed') || r.status.toLowerCase().includes('error'))) {
-                                errors.push(r.status);
-                            }
-                         });
-                         
-                         if (hasSuccessful) {
-                            summaryStatus = renderFindingsBadges(maxCounts, 'Reviewed');
-                            if (validRunCount > 1) {
-                                summaryStatus += ` <span style="color:#888; font-size:0.85em; font-style:italic;">(max of ${validRunCount} runs)</span>`;
-                            }
-                         } else if (errors.length > 0) {
-                            summaryStatus = `<span style="color:#d73a49; font-weight:bold">${escapeHtml(errors[0])}</span>`;
-                         } else {
-                            summaryStatus = '<span style="color:#888">In progress...</span>';
-                         }
+                           if (r.status === 'Reviewed') {
+                               hasSuccessful = true;
+                               try {
+                                   if (r.output) {
+                                       const out = typeof r.output === 'string' ? JSON.parse(r.output) : r.output;
+                                       if (out && out.findings && Array.isArray(out.findings)) {
+                                           let current = { low: 0, medium: 0, high: 0, critical: 0 };
+                                           out.findings.forEach(f => {
+                                               const s = String(f.severity || '').toLowerCase();
+                                               if (s === 'critical') current.critical++;
+                                               else if (s === 'high') current.high++;
+                                               else if (s === 'medium') current.medium++;
+                                               else current.low++;
+                                           });
+
+                                           // Max aggregation
+                                           maxCounts.critical = Math.max(maxCounts.critical, current.critical);
+                                           maxCounts.high = Math.max(maxCounts.high, current.high);
+                                           maxCounts.medium = Math.max(maxCounts.medium, current.medium);
+                                           maxCounts.low = Math.max(maxCounts.low, current.low);
+                                       }
+                                   }
+                               } catch (e) {}
+                           } else if (r.status === 'Skipped') {
+                               hasSkipped = true;
+                               skippedReason = r.result || 'Skipped';
+                           } else if (r.status && (r.status.toLowerCase().includes('failed') || r.status.toLowerCase().includes('error'))) {
+                               errors.push(r.status);
+                           } else if (r.status === 'Pending' || r.status === 'In Review') {
+                               hasInProgress = true;
+                           }
+                        });
+
+                        if (hasSuccessful) {
+                           summaryStatus = renderFindingsBadges(maxCounts, 'Reviewed');
+                           if (validRunCount > 1) {
+                               summaryStatus += ` <span style="color:#888; font-size:0.85em; font-style:italic;">(max of ${validRunCount} runs)</span>`;
+                           }
+                        } else if (errors.length > 0) {
+                           summaryStatus = `<span style="color:#d73a49; font-weight:bold">${escapeHtml(errors[0])}</span>`;
+                        } else if (hasSkipped && !hasInProgress) {
+                           // Only skipped
+                           summaryStatus = `<span style="color:#888" title="${escapeHtml(skippedReason)}">Skipped</span>`;
+                        } else {
+                           summaryStatus = '<span style="color:#888">In progress...</span>';
+                        }
                     }
                     const patchLabel = patch ? `Patch ${patch.part_index}` : `Patch ${pid}`;
                     const patchSubject = patch ? escapeHtml(patch.subject || '(no subject)') : '';
@@ -1717,7 +1731,7 @@
 
             const statusRaw = r.status || 'Finished';
             const s = statusRaw.toLowerCase();
-            const showDetails = s === 'reviewed' || s === 'finished' || s === 'failed';
+            const showDetails = s === 'reviewed' || s === 'finished' || s === 'failed' || s === 'skipped';
 
             return `
                 <div class="review-card">
