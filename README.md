@@ -6,12 +6,21 @@
 
 Sashiko is an automated system designed to assist in the review of Linux kernel patches. It ingests patches from mailing lists, analyzes them using AI-powered prompts, and provides feedback to help maintainers and developers ensure code quality and adherence to kernel standards.
 
+## Quality of reviews
+
+Sashiko is not perfect, but in our measurements the quality of reviews is high:
+in our tests sashiko was able to find 45.2% (with Gemini 3.1 Pro) of bugs based on unfiltered last 1000 upstream commits with Fixed: tags.
+In some sense, it's already above the human level given that 100% of these bugs made it through human-driven code reviews and were accepted to the main tree.
+The rate of false positives is harder to measure, but based on limited manual reviews it's well within 20% range and the majority of it is a gray zone.
+
+Please, note that as with any other LLM-based tools, Sashiko's output is probabilistic: it might find or not find bugs (or find other bugs) with the same input.
+
 ## Features
 
 - **Automated Ingestion**: Monitors mailing lists (using `lore.kernel.org`) for new patch submissions.
 - **Manual Ingestion**: Can ingest patches from a local git repository.
-- **AI-Powered Review**: Utilizes LLM models to analyze patches against subsystem-specific guidelines.
-- **Self-contained**: Doesn't depend on 3rd-party tools and can work with various LLM providers.
+- **Self-contained**: Doesn't depend on 3rd-party tools and can work with various LLM providers (Gemini and Claude are currently supported).
+- **Web interface and CLI**: Provides a web interface and a CLI tool. Email support will be added soon.
 
 ## Prompts
 
@@ -48,7 +57,7 @@ Running an automated review system like Sashiko can be computationally expensive
     git clone --recursive https://github.com/rgushchin/sashiko.git
     cd sashiko
     ```
-    *Note: The `--recursive` flag is important to initialize the `linux` kernel source and `review-prompts` submodules.*
+    *Note: The `--recursive` flag is important to initialize the `linux` kernel source submodule.*
 
 2.  **Configuration**:
     Copy `Settings.toml` to customize your configuration. The default `Settings.toml` includes sections for:
@@ -68,7 +77,7 @@ Running an automated review system like Sashiko can be computationally expensive
     ```toml
     [ai]
     provider = "gemini"
-    model = "gemini-3-pro-preview"
+    model = "gemini-3.1-pro-preview"
     # Optional settings
     # max_input_tokens = 950000
     # temperature = 1.0
@@ -105,11 +114,6 @@ Running an automated review system like Sashiko can be computationally expensive
     prompt_caching = true
     ```
 
-    **Supported models**:
-    - `claude-sonnet-4-5` - Recommended (200K context, balanced quality/cost/speed)
-    - `claude-opus-4-5` - Highest quality (1M context)
-    - `claude-haiku-4-5` - Fastest and cheapest
-
     **Features**:
     - Automatic prompt caching (5-minute TTL) reduces costs for repeated context
     - Full tool/function calling support for git operations
@@ -140,6 +144,13 @@ You can automatically add this line by using the `-s` flag when committing:
 ```bash
 git commit -s
 ```
+
+## Development
+
+This project was built using Gemini CLI. If you're using other development agents, make sure they follow the guidance in GEMINI.md.
+Please, make sure your code is working before sending PR. Make sure it can be built without warnings, all tests pass, run cargo fmt and clippy.
+If you're changing AI-related parts, please, run at least several code reviews.
+Development got much faster these days, but testing is as important as ever.
 
 ## License
 
