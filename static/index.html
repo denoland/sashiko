@@ -688,7 +688,17 @@
         // =====================================================================
         function parseHash() {
             let hash = window.location.hash || '#/';
+            let search = window.location.search || '';
             let query = {};
+
+            if (search.startsWith('?')) {
+                const qStr = search.substring(1);
+                qStr.split('&').forEach(part => {
+                    const [k, v] = part.split('=');
+                    if (k) query[decodeURIComponent(k)] = decodeURIComponent(v || '');
+                });
+            }
+
             const qIndex = hash.indexOf('?');
             if (qIndex !== -1) {
                 const qStr = hash.substring(qIndex + 1);
@@ -1012,12 +1022,29 @@
 
         function updateUrlWithList() {
             let url = new URL(window.location.href);
+            let searchParams = new URLSearchParams(window.location.search);
+            
+            // Check if 'list' is in the query string
+            if (searchParams.has('list') || window.location.search.startsWith('?list=')) {
+                if (state.selectedList) {
+                    searchParams.set('list', state.selectedList);
+                } else {
+                    searchParams.delete('list');
+                }
+                let searchStr = searchParams.toString() ? '?' + searchParams.toString() : '';
+                window.history.replaceState(null, null, window.location.pathname + searchStr + window.location.hash);
+                return;
+            }
+
             let hash = url.hash;
             let queryPart = '';
             
             const qIndex = hash.indexOf('?');
             if (qIndex !== -1) {
                 hash = hash.substring(0, qIndex);
+            }
+            if (!hash) {
+                hash = '#/';
             }
             
             // Rebuild query
@@ -1031,7 +1058,7 @@
             }
             
             // Update without reload
-            window.history.replaceState(null, null, hash + queryPart);
+            window.history.replaceState(null, null, window.location.pathname + window.location.search + hash + queryPart);
         }
 
         function setMailingList(list) {
