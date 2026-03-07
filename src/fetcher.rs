@@ -405,21 +405,42 @@ impl FetchAgent {
     }
 
     async fn is_present(&self, commit_or_range: &str) -> bool {
-        let args = if commit_or_range.contains("..") {
-            vec!["rev-list", "-n", "1", commit_or_range]
+        let arg_str: String;
+        let args = if let Some((start, end)) = commit_or_range.split_once("..") {
+            // For ranges, ensure both endpoints are commits
+            arg_str = format!("{}^{{commit}}..{}^{{commit}}", start, end);
+            vec!["rev-list", "-n", "1", &arg_str]
         } else {
-            vec!["rev-parse", "--verify", commit_or_range]
+            // For single commits, ensure it is a valid commit object
+            arg_str = format!("{}^{{commit}}", commit_or_range);
+            vec!["rev-parse", "--verify", &arg_str]
         };
 
-        let status = Command::new("git")
+        let output = Command::new("git")
             .current_dir(&self.repo_path)
             .args(&args)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .output()
             .await;
 
-        matches!(status, Ok(s) if s.success())
+        match output {
+            Ok(s) => {
+                let success = s.status.success();
+                if success {
+                    info!("is_present: {} is present", commit_or_range);
+                } else {
+                    info!(
+                        "is_present: {} is missing or not a commit. stderr: {}",
+                        commit_or_range,
+                        String::from_utf8_lossy(&s.stderr)
+                    );
+                }
+                success
+            }
+            Err(e) => {
+                error!("is_present: {} check failed: {}", commit_or_range, e);
+                false
+            }
+        }
     }
 
     async fn resolve_sha(&self, commit: &str) -> Result<String> {
@@ -601,6 +622,73 @@ mod tests {
             }
             _ => panic!("Wrong event type"),
         }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_is_present_with_tree_sha() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let repo_path = temp_dir.path().to_path_buf();
+
+        // Setup dummy repo
+        Command::new("git")
+            .current_dir(&repo_path)
+            .arg("init")
+            .output()
+            .await?;
+        Command::new("git")
+            .current_dir(&repo_path)
+            .args(["config", "user.name", "Test User"])
+            .output()
+            .await?;
+        Command::new("git")
+            .current_dir(&repo_path)
+            .args(["config", "user.email", "test@example.com"])
+            .output()
+            .await?;
+
+        let file_path = repo_path.join("file.txt");
+        let mut file = File::create(&file_path)?;
+        writeln!(file, "content")?;
+
+        Command::new("git")
+            .current_dir(&repo_path)
+            .args(["add", "."])
+            .output()
+            .await?;
+        Command::new("git")
+            .current_dir(&repo_path)
+            .args(["commit", "-m", "Subject Line"])
+            .output()
+            .await?;
+
+        let (tx, _rx) = mpsc::channel(1);
+        let (agent, _) = FetchAgent::new(repo_path.clone(), tx);
+
+        let output = Command::new("git")
+            .current_dir(&repo_path)
+            .args(["rev-parse", "HEAD^{tree}"])
+            .output()
+            .await?;
+        let tree_sha = String::from_utf8(output.stdout)?.trim().to_string();
+
+        assert!(
+            !agent.is_present(&tree_sha).await,
+            "Tree SHA should not be considered a present commit"
+        );
+
+        let output = Command::new("git")
+            .current_dir(&repo_path)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .await?;
+        let commit_sha = String::from_utf8(output.stdout)?.trim().to_string();
+
+        assert!(
+            agent.is_present(&commit_sha).await,
+            "Commit SHA should be considered present"
+        );
 
         Ok(())
     }
