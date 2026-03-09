@@ -21,7 +21,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
-use tracing::{error, info};
+use tracing::info;
 
 // --- Claude API Request/Response Types ---
 
