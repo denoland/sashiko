@@ -358,6 +358,9 @@ impl ToolBox {
             (None, None) => (0, total_lines),
         };
 
+        let start = start.min(total_lines);
+        let end = end.clamp(start, total_lines);
+
         if start >= total_lines {
             return Ok(json!({ "content": "", "lines_read": 0, "total_lines": total_lines }));
         }
@@ -493,6 +496,9 @@ impl ToolBox {
                 (None, Some(e)) => (0, e.min(total_lines)),
                 (None, None) => (0, total_lines),
             };
+
+            let start = start.min(total_lines);
+            let end = end.clamp(start, total_lines);
 
             if start >= total_lines {
                 return Ok(json!({ "content": "", "lines_read": 0, "total_lines": total_lines }));
