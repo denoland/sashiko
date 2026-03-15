@@ -19,13 +19,85 @@
             --selected: #d0d0d0;
             --code-bg: #f6f8fa;
             --code-border: #d0d7de;
+            --btn-bg: #fff;
+            --input-bg: #fff;
+            --card-bg: #fff;
+            --ai-bg: #ffffff;
+            --ai-border: #283593;
+            --warn-bg: #fff3cd;
+            --warn-border: #ffeeba;
+            --warn-text: #856404;
+            --error-bg: #fff0f0;
+            --error-border: #ffcdd2;
+            --error-text: #d73a49;
+            --error-title: #b71c1c;
+            --thought-color: #6a737d;
+            --thought-border: #d0d7de;
+            --log-color: #000;
+            --status-pending: #0366d6;
+            --status-inreview: #d67f05;
+            --status-reviewed: #22863a;
+            --status-failed: #d73a49;
+            --tag-bg: #e0f7fa;
+            --tag-text: #006064;
+            --diff-add-bg: #e6ffec;
+            --diff-rm-bg: #ffebe9;
+            --diff-header: #005cc5;
+            --role-user: #005cc5;
+            --role-tool: #3f51b5;
+            --fn-name: #6f42c1;
+
         }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0d1117;
+                --border: #30363d;
+                --border-light: #21262d;
+                --text: #c9d1d9;
+                --text-muted: #8b949e;
+                --text-dim: #6e7681;
+                --link: #58a6ff;
+                --hover: #21262d;
+                --selected: #21262d;
+                --code-bg: #161b22;
+                --code-border: #30363d;
+                --btn-bg: #21262d;
+                --input-bg: #0d1117;
+                --card-bg: #161b22;
+                --ai-bg: #161b22;
+                --ai-border: #58a6ff;
+                --warn-bg: #3a2a00;
+                --warn-border: #755200;
+                --warn-text: #e5b300;
+                --error-bg: #3a0000;
+                --error-border: #750000;
+                --error-text: #ff6b6b;
+                --error-title: #ff8b8b;
+                --thought-color: #8b949e;
+                --thought-border: #30363d;
+                --log-color: #c9d1d9;
+                --status-pending: #58a6ff;
+                --status-inreview: #d29922;
+                --status-reviewed: #3fb950;
+                --status-failed: #f85149;
+                --tag-bg: #032f62;
+                --tag-text: #79c0ff;
+                --diff-add-bg: rgba(46, 160, 67, 0.15);
+                --diff-rm-bg: rgba(248, 81, 73, 0.15);
+                --diff-header: #79c0ff;
+                --role-user: #79c0ff;
+                --role-tool: #82aaff;
+                --fn-name: #d2a8ff;
+            }
+        }
+
 
         * {
             box-sizing: border-box;
         }
 
         body {
+            color-scheme: light dark;
             font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
             font-size: 13px;
             line-height: 1.4;
@@ -86,6 +158,8 @@
         }
 
         .controls input[type="text"] {
+            background: var(--input-bg);
+            color: var(--text);
             flex: 1;
             min-width: 200px;
             padding: 4px 8px;
@@ -101,7 +175,7 @@
             font-family: inherit;
             font-size: inherit;
             border: 1px solid var(--border);
-            background: #fff;
+            background: var(--btn-bg);
             border-radius: 3px;
             cursor: pointer;
         }
@@ -169,34 +243,34 @@
         }
 
         .status-Pending {
-            color: #0366d6;
+            color: var(--status-pending);
         }
 
         .status-In,
         .status-Analyzing,
         .status-Reviewing {
-            color: #d67f05;
+            color: var(--status-inreview);
         }
 
         .status-Finished,
         .status-Applied,
         .status-Reviewed {
-            color: #22863a;
+            color: var(--status-reviewed);
         }
 
         .status-Failed {
-            color: #d73a49;
+            color: var(--status-failed);
         }
 
         .status-Incomplete {
-            color: #6a737d;
+            color: var(--thought-color);
         }
 
         /* Subsystem Tags - UNCHANGED */
         .tag {
             display: inline-block;
-            background: #e0f7fa;
-            color: #006064;
+            background: var(--tag-bg);
+            color: var(--tag-text);
             padding: 1px 4px;
             border-radius: 3px;
             font-size: 0.75em;
@@ -223,7 +297,7 @@
             gap: 12px;
             font-size: 0.9em;
             color: var(--text-muted);
-            /* background: #fff; */
+            /* background: var(--btn-bg); */
             /* border: 1px solid var(--border-light); */
             border-radius: 4px;
             padding: 8px 12px;
@@ -269,13 +343,13 @@
             display: inline-block;
         }
         
-        .status-dot.status-Pending { background-color: #0366d6; }
-        .status-dot.status-InReview { background-color: #d67f05; }
-        .status-dot.status-Reviewed { background-color: #22863a; }
-        .status-dot.status-Failed { background-color: #d73a49; }
-        .status-dot.status-FailedToApply { background-color: #d73a49; }
-        .status-dot.status-Cancelled { background-color: #6a737d; }
-        .status-dot.status-Incomplete { background-color: #6a737d; }
+        .status-dot.status-Pending { background-color: var(--status-pending); }
+        .status-dot.status-InReview { background-color: var(--status-inreview); }
+        .status-dot.status-Reviewed { background-color: var(--status-reviewed); }
+        .status-dot.status-Failed { background-color: var(--status-failed); }
+        .status-dot.status-FailedToApply { background-color: var(--status-failed); }
+        .status-dot.status-Cancelled { background-color: var(--thought-color); }
+        .status-dot.status-Incomplete { background-color: var(--thought-color); }
 
         /* Stats Footer */
         .stats {
@@ -309,7 +383,7 @@
         .copy-btn {
             cursor: pointer;
             border: 1px solid var(--border);
-            background: #fff;
+            background: var(--btn-bg);
             padding: 1px 5px;
             border-radius: 3px;
             font-size: 11px;
@@ -326,7 +400,7 @@
             padding: 10px;
             margin-bottom: 10px;
             border-radius: 4px;
-            background: #fff;
+            background: var(--btn-bg);
         }
 
         .review-meta {
@@ -409,21 +483,21 @@
         }
 
         .diff-added {
-            background-color: #e6ffec;
+            background-color: var(--diff-add-bg);
         }
 
         .diff-removed {
-            background-color: #ffebe9;
+            background-color: var(--diff-rm-bg);
         }
 
         .diff-header {
-            color: #005cc5;
+            color: var(--diff-header);
             font-weight: bold;
         }
 
         .ai-comment {
-            background-color: #ffffff;
-            border-left: 3px solid #283593;
+            background-color: var(--ai-bg);
+            border-left: 3px solid var(--ai-border);
             padding-left: 12px;
             font-weight: 500;
         }
@@ -483,7 +557,7 @@
         }
 
         .role-user .log-gutter {
-            color: #005cc5;
+            color: var(--diff-header);
         }
 
         .role-model .log-gutter {
@@ -491,22 +565,22 @@
         }
 
         .role-system .log-gutter {
-            color: #d67f05;
+            color: var(--status-inreview);
         }
 
         .role-tool .log-gutter {
-            color: #3f51b5; /* material indigo */
+            color: var(--role-tool); /* material indigo */
         }
 
         .role-tool .log-content {
-            color: #000;
+            color: var(--log-color);
         }
 
 
 
         .fn-name {
             font-weight: bold;
-            color: #6f42c1;
+            color: var(--fn-name);
         }
 
         /* Expandable JSON */
@@ -552,6 +626,7 @@
         }
 
         pre.body {
+            color-scheme: light dark;
             background: var(--code-bg);
             padding: 10px;
             overflow-x: auto;
@@ -567,8 +642,8 @@
             position: fixed;
             bottom: 10px;
             right: 10px;
-            background: rgba(0, 0, 0, 0.7);
-            color: #fff;
+            background: var(--text);
+            color: var(--bg);
             padding: 6px 10px;
             border-radius: 4px;
             font-size: 11px;
@@ -606,14 +681,14 @@
         }
 
         .error {
-            color: #d73a49;
+            color: var(--status-failed);
             padding: 20px;
         }
 
         /* Stats & Charts */
         .chart-section {
             margin-bottom: 30px;
-            background: #fff;
+            background: var(--card-bg);
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
@@ -629,7 +704,7 @@
         }
 
         .stat-card {
-            background: #fff;
+            background: var(--card-bg);
             border: 1px solid var(--border);
             padding: 12px;
             border-radius: 4px;
@@ -710,9 +785,9 @@
             border-radius: 4px;
         }
         .about-text .disclaimer {
-            background-color: #fff3cd;
-            border: 1px solid #ffeeba;
-            color: #856404;
+            background-color: var(--warn-bg);
+            border: 1px solid var(--warn-border);
+            color: var(--warn-text);
             padding: 12px;
             border-radius: 4px;
             margin-top: 24px;
@@ -768,7 +843,7 @@
                 </div>
 
                 <div style="margin-top: 32px; text-align: center;">
-                    <a href="https://github.com/sashiko-dev/sashiko" target="_blank" rel="noopener noreferrer" style="display: inline-flex; align-items: center; gap: 8px; font-weight: bold; color: var(--text); padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; background: #fff; text-decoration: none; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                    <a href="https://github.com/sashiko-dev/sashiko" target="_blank" rel="noopener noreferrer" style="display: inline-flex; align-items: center; gap: 8px; font-weight: bold; color: var(--text); padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--btn-bg); text-decoration: none; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                         <svg height="20" aria-hidden="true" viewBox="0 0 16 16" version="1.1" width="20" data-view-component="true" style="fill: currentColor;">
                             <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path>
                         </svg>
@@ -1541,7 +1616,7 @@
 
                 let statusHtml = '';
                 if (patch && (patch.status === 'error' || patch.status === 'failed')) {
-                     statusHtml = `<div style="background:#fff0f0; border:1px solid #ffcdd2; color:#d73a49; padding:8px; border-radius:4px; margin-bottom:8px; font-family:monospace; white-space:pre-wrap; font-size:0.9em;"><strong>Patch Application Failed:</strong>\n${escapeHtml(patch.apply_error || 'Unknown error')}</div>`;
+                     statusHtml = `<div style="background:var(--error-bg); border:1px solid var(--error-border); color:var(--error-text); padding:8px; border-radius:4px; margin-bottom:8px; font-family:monospace; white-space:pre-wrap; font-size:0.9em;"><strong>Patch Application Failed:</strong>\n${escapeHtml(patch.apply_error || 'Unknown error')}</div>`;
                 }
 
                 let listHtml = '';
@@ -1568,7 +1643,7 @@
                     let summaryStatus = '';
 
                     if (patch && (patch.status === 'error' || patch.status === 'failed')) {
-                        summaryStatus = `<span style="color:#d73a49; font-weight:bold">Apply Failed</span>`;
+                        summaryStatus = `<span style="color:var(--error-text); font-weight:bold">Apply Failed</span>`;
                     } else if (patch && patch.status === 'Skipped') {
                         summaryStatus = '<span style="color:#888">Skipped</span>';
                     } else if (!reviews || reviews.length === 0) {
@@ -1626,7 +1701,7 @@
                                summaryStatus += ` <span style="color:#888; font-size:0.85em; font-style:italic;">(max of ${validRunCount} runs)</span>`;
                            }
                         } else if (errors.length > 0) {
-                           summaryStatus = `<span style="color:#d73a49; font-weight:bold">${escapeHtml(errors[0])}</span>`;
+                           summaryStatus = `<span style="color:var(--error-text); font-weight:bold">${escapeHtml(errors[0])}</span>`;
                         } else if (hasSkipped && !hasInProgress) {
                            // Only skipped
                            summaryStatus = `<span style="color:#888" title="${escapeHtml(skippedReason)}">Skipped</span>`;
@@ -1673,8 +1748,8 @@
             let failureHtml = '';
             if (data.failed_reason) {
                 failureHtml = `
-                    <div class="section" style="background:#fff0f0; border:1px solid #ffcdd2; padding:12px; border-radius:4px; margin-bottom:16px;">
-                        <h3 style="margin-top:0; color:#b71c1c;">Ingestion Failed</h3>
+                    <div class="section" style="background:var(--error-bg); border:1px solid var(--error-border); padding:12px; border-radius:4px; margin-bottom:16px;">
+                        <h3 style="margin-top:0; color:var(--error-title);">Ingestion Failed</h3>
                         <div style="color:#d32f2f;">${escapeHtml(data.failed_reason)}</div>
                     </div>
                 `;
@@ -1745,9 +1820,9 @@
                  if (!isJson) {
                      const formattedLogs = escapeHtml(data.baseline_logs)
                         .replace(/ - passed/g, ' - <span style="color:#2e7d32; font-weight:bold">passed</span>')
-                        .replace(/ - failed/g, ' - <span style="color:#d73a49; font-weight:bold">failed</span>')
+                        .replace(/ - failed/g, ' - <span style="color:var(--error-text); font-weight:bold">failed</span>')
                         .replace(/Application successful./g, '<span style="color:#2e7d32; font-weight:bold">Application successful.</span>')
-                        .replace(/Application failed./g, '<span style="color:#d73a49; font-weight:bold">Application failed.</span>');
+                        .replace(/Application failed./g, '<span style="color:var(--error-text); font-weight:bold">Application failed.</span>');
                      
                      contentHtml = `<div class="log-block" style="max-height:300px;">${formattedLogs}</div>`;
                  }
@@ -1942,7 +2017,7 @@
                     ${inlineHtml}
                     <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; font-size: 0.9em;">
                         ${r.id ? `<a href="#/log/${r.id}" style="font-weight:600; color:#666; text-decoration:none;" onmouseover="this.style.color='#007bff'" onmouseout="this.style.color='#666'">View Raw Log</a>` : '<span></span>'}
-                        <a href="javascript:void(0)" onclick="document.getElementById('ai-reviews').scrollIntoView({behavior: 'smooth'})" style="font-size: 0.95em; color: #999; text-decoration: none;">↑ Back to Summary</a>
+                        <a href="javascript:void(0)" onclick="document.getElementById('ai-reviews').scrollIntoView({behavior: 'smooth'})" style="font-size: 0.95em; color: var(--text-dim); text-decoration: none;">↑ Back to Summary</a>
                     </div>
                     ` : ''}
                 </div>
@@ -2093,7 +2168,7 @@ ${escapeHtml((data.body || '(no body)').replace(/\n+$/, ''), true, false)}${data
 
                     // Unified format: direct content and tool_calls
                     if (entry.thought && typeof entry.thought === 'string') {
-                        content += `<div style="color: #6a737d; font-style: italic; border-left: 2px solid #d0d7de; padding-left: 8px; margin: 4px 0; white-space: pre-wrap;">${escapeHtml(entry.thought)}</div>`;
+                        content += `<div style="color: var(--thought-color); font-style: italic; border-left: 2px solid var(--thought-border); padding-left: 8px; margin: 4px 0; white-space: pre-wrap;">${escapeHtml(entry.thought)}</div>`;
                     }
                     
                     if (entry.content && typeof entry.content === 'string') {
@@ -2114,7 +2189,7 @@ ${escapeHtml((data.body || '(no body)').replace(/\n+$/, ''), true, false)}${data
                     parts.forEach(part => {
                         if (part.text) {
                             if (part.thought) {
-                                content += `<div style="color: #6a737d; font-style: italic; border-left: 2px solid #d0d7de; padding-left: 8px; margin: 4px 0; white-space: pre-wrap;">${escapeHtml(part.text)}</div>`;
+                                content += `<div style="color: var(--thought-color); font-style: italic; border-left: 2px solid var(--thought-border); padding-left: 8px; margin: 4px 0; white-space: pre-wrap;">${escapeHtml(part.text)}</div>`;
                             } else {
                                 content += `<div>${escapeHtml(part.text)}</div>`;
                             }
@@ -2402,6 +2477,13 @@ ${escapeHtml((data.body || '(no body)').replace(/\n+$/, ''), true, false)}${data
                 ]);
 
                 // Colors
+                
+                const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const themeBg = isDark ? 'rgba(22, 27, 34, 0.9)' : 'rgba(255, 255, 255, 0.9)';
+                const themeBorder = isDark ? '#30363d' : '#eee';
+                const themeText = isDark ? '#c9d1d9' : '#333';
+                const themeAxis = isDark ? '#444' : '#ccc';
+                
                 const colors = {
                     primary: '#5470c6',
                     secondary: '#91cc75',
@@ -2466,7 +2548,7 @@ ${escapeHtml((data.body || '(no body)').replace(/\n+$/, ''), true, false)}${data
 
                 // --- 1. Timeline Chart ---
                 if (timeline.messages && timeline.messages.length) {
-                    const chart = echarts.init(document.getElementById('chart-timeline'));
+                    const chart = echarts.init(document.getElementById('chart-timeline'), isDark ? 'dark' : null);
                     const dates = [...new Set([
                         ...timeline.messages.map(m => m.day),
                         ...timeline.patchsets.map(p => p.day),
@@ -2478,11 +2560,12 @@ ${escapeHtml((data.body || '(no body)').replace(/\n+$/, ''), true, false)}${data
                     const patchesData = dates.map(d => timeline.patches?.find(p => p.day === d)?.count || 0);
 
                     const option = {
+                        backgroundColor: 'transparent',
                         color: [colors.primary, colors.individual_patches, colors.patchset],
-                        tooltip: { trigger: 'axis', backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#eee', borderWidth: 1, textStyle: { color: '#333' } },
+                        tooltip: { trigger: 'axis', backgroundColor: themeBg, borderColor: themeBorder, borderWidth: 1, textStyle: { color: themeText } },
                         legend: { data: ['Messages', 'Patches', 'Patchsets'], bottom: 0 },
-                        grid: { left: '3%', right: '4%', bottom: '10%', top: '10%', containLabel: true, show: true, borderColor: '#eee' },
-                        xAxis: { type: 'category', data: dates, splitLine: { show: false }, axisLine: { lineStyle: { color: '#ccc' } } },
+                        grid: { left: '3%', right: '4%', bottom: '10%', top: '10%', containLabel: true, show: true, borderColor: themeBorder },
+                        xAxis: { type: 'category', data: dates, splitLine: { show: false }, axisLine: { lineStyle: { color: themeAxis } } },
                         yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed' } } },
                         series: [
                             { name: 'Messages', type: 'line', smooth: true, showSymbol: false, lineStyle: { width: 3 }, data: msgData, itemStyle: { color: colors.primary } },
@@ -2498,7 +2581,7 @@ ${escapeHtml((data.body || '(no body)').replace(/\n+$/, ''), true, false)}${data
 
                 // --- 1.5. Review Outcomes Timeline ---
                 if (timeline.reviews && timeline.reviews.length) {
-                    const chart = echarts.init(document.getElementById('chart-review-outcomes'));
+                    const chart = echarts.init(document.getElementById('chart-review-outcomes'), isDark ? 'dark' : null);
                     const dates = [...new Set(timeline.reviews.map(r => r.day))].sort();
                     
                     const statuses = [...new Set(timeline.reviews.map(r => r.status))];
@@ -2528,10 +2611,11 @@ ${escapeHtml((data.body || '(no body)').replace(/\n+$/, ''), true, false)}${data
                     });
 
                     const option = {
+                        backgroundColor: 'transparent',
                         tooltip: { trigger: 'axis' },
                         legend: { data: statuses, bottom: 0 },
                         grid: { left: '3%', right: '4%', bottom: '10%', top: '10%', containLabel: true },
-                        xAxis: { type: 'category', data: dates, splitLine: { show: false }, axisLine: { lineStyle: { color: '#ccc' } } },
+                        xAxis: { type: 'category', data: dates, splitLine: { show: false }, axisLine: { lineStyle: { color: themeAxis } } },
                         yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed' } } },
                         series: series
                     };
@@ -2543,7 +2627,7 @@ ${escapeHtml((data.body || '(no body)').replace(/\n+$/, ''), true, false)}${data
 
                 // --- 3. Tool Usage Chart ---
                 if (tools && tools.length) {
-                    const chart = echarts.init(document.getElementById('chart-tools'));
+                    const chart = echarts.init(document.getElementById('chart-tools'), isDark ? 'dark' : null);
                     // Group by tool name
                     const toolStats = {};
                     tools.forEach(t => {
@@ -2555,6 +2639,7 @@ ${escapeHtml((data.body || '(no body)').replace(/\n+$/, ''), true, false)}${data
                     const values = toolNames.map(t => toolStats[t]);
 
                     const option = {
+                        backgroundColor: 'transparent',
                         tooltip: { trigger: 'axis' },
                         grid: { left: '3%', right: '4%', bottom: '5%', top: '5%', containLabel: true },
                         xAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed' } } },
@@ -2583,7 +2668,7 @@ ${escapeHtml((data.body || '(no body)').replace(/\n+$/, ''), true, false)}${data
 
                 // --- 4. Findings Chart ---
                 if (timeline.findings && timeline.findings.length) {
-                    const chart = echarts.init(document.getElementById('chart-findings'));
+                    const chart = echarts.init(document.getElementById('chart-findings'), isDark ? 'dark' : null);
                     const dates = [...new Set(timeline.findings.map(f => f.day))].sort();
                     const severities = ['low', 'medium', 'high', 'critical'];
                     const severityColors = {
@@ -2608,10 +2693,11 @@ ${escapeHtml((data.body || '(no body)').replace(/\n+$/, ''), true, false)}${data
                     });
 
                     const option = {
+                        backgroundColor: 'transparent',
                         tooltip: { trigger: 'axis' },
                         legend: { data: severities.map(s => s.charAt(0).toUpperCase() + s.slice(1)), bottom: 0 },
                         grid: { left: '3%', right: '4%', bottom: '15%', top: '10%', containLabel: true },
-                        xAxis: { type: 'category', data: dates, splitLine: { show: false }, axisLine: { lineStyle: { color: '#ccc' } } },
+                        xAxis: { type: 'category', data: dates, splitLine: { show: false }, axisLine: { lineStyle: { color: themeAxis } } },
                         yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed' } } },
                         series: series
                     };
