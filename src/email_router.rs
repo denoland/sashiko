@@ -110,6 +110,10 @@ impl EmailRouter {
         final_to.retain(|a| !a.to_lowercase().contains(&sashiko_lower));
         final_cc.retain(|a| !a.to_lowercase().contains(&sashiko_lower) && !final_to.contains(a));
 
+        if final_to.is_empty() && final_cc.is_empty() {
+            return Action::Mute;
+        }
+
         Action::Send {
             to: final_to.into_iter().collect(),
             cc: final_cc.into_iter().collect(),
@@ -169,6 +173,23 @@ mod tests {
                 cc: vec![],
             },
             subsystems,
+        }
+    }
+
+    #[test]
+    fn test_empty_recipients_mute() {
+        let policy = build_test_policy();
+        let action = EmailRouter::resolve_recipients(
+            &policy,
+            &[],
+            &[],
+            "", // no patch author
+            "sashiko@sashiko.dev",
+        );
+
+        match action {
+            Action::Mute => {}
+            _ => panic!("Expected Mute when no recipients"),
         }
     }
 

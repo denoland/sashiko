@@ -2120,10 +2120,33 @@ echo '{"patchset_id": 1, "patches": [{"index": 1, "status": "applied"}]}'
         let quota_manager = Arc::new(QuotaManager::new());
 
         let thread_id = db.create_thread("msg_id_1", "Subject", 1000).await?;
-        db.create_message("msg_id_p1", thread_id, None, "Author", "Subject", 1000, "Body", "", "", None, None).await?;
-        let ps_id = db.create_patchset(thread_id, None, "msg_id_1", "Subject", "Author", 1000, 1, 1, "", "", None, 1, None, false, None, None).await?.unwrap();
-        let p_id = db.create_patch(ps_id, "msg_id_p1", 1, "diff --git a/foo.c b/foo.c\n+int x;").await?;
-        let review_id = db.create_review(ps_id, Some(p_id), "mock", "mock", None, None).await?;
+        db.create_message(
+            "msg_id_p1",
+            thread_id,
+            None,
+            "Author",
+            "Subject",
+            1000,
+            "Body",
+            "",
+            "",
+            None,
+            None,
+        )
+        .await?;
+        let ps_id = db
+            .create_patchset(
+                thread_id, None, "msg_id_1", "Subject", "Author", 1000, 1, 1, "", "", None, 1,
+                None, false, None, None,
+            )
+            .await?
+            .unwrap();
+        let p_id = db
+            .create_patch(ps_id, "msg_id_p1", 1, "diff --git a/foo.c b/foo.c\n+int x;")
+            .await?;
+        let review_id = db
+            .create_review(ps_id, Some(p_id), "mock", "mock", None, None)
+            .await?;
 
         run_review_tool(
             ps_id,
@@ -2157,9 +2180,13 @@ echo '{"patchset_id": 1, "patches": [{"index": 1, "status": "applied"}]}'
             cached_tokens: 200, // uncached input = 800
         });
 
-        let err = run_two_request_mock(settings, provider).await
+        let err = run_two_request_mock(settings, provider)
+            .await
             .expect_err("Expected token budget error");
-        assert!(err.to_string().contains("Token budget exceeded"), "unexpected error: {err}");
+        assert!(
+            err.to_string().contains("Token budget exceeded"),
+            "unexpected error: {err}"
+        );
         Ok(())
     }
 
@@ -2177,9 +2204,13 @@ echo '{"patchset_id": 1, "patches": [{"index": 1, "status": "applied"}]}'
             cached_tokens: 0,
         });
 
-        let err = run_two_request_mock(settings, provider).await
+        let err = run_two_request_mock(settings, provider)
+            .await
             .expect_err("Expected output token budget error");
-        assert!(err.to_string().contains("Output token budget exceeded"), "unexpected error: {err}");
+        assert!(
+            err.to_string().contains("Output token budget exceeded"),
+            "unexpected error: {err}"
+        );
         Ok(())
     }
 }

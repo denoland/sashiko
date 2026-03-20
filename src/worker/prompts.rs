@@ -790,7 +790,9 @@ Example:
                             Err(violation) => {
                                 tracing::warn!(
                                     "Stage 9 format validation failed (attempt {}/{}): {}. Retrying with augmented prompt.",
-                                    retries + 1, max_retries, violation
+                                    retries + 1,
+                                    max_retries,
+                                    violation
                                 );
                                 let reminder = format!(
                                     "\n\nPrevious attempt was rejected: {violation}. Strictly follow the formatting rules."
@@ -802,7 +804,12 @@ Example:
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("Stage 9 failed (attempt {}/{}): {}", retries + 1, max_retries, e);
+                        tracing::warn!(
+                            "Stage 9 failed (attempt {}/{}): {}",
+                            retries + 1,
+                            max_retries,
+                            e
+                        );
                     }
                 }
                 retries += 1;
