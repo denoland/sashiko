@@ -652,6 +652,9 @@ impl Reviewer {
                 }
             };
 
+            let baseline_display = format!("{} ({})", baseline_ref, baseline_sha);
+            current_log = format!("Trying baseline: {}\n", baseline_display);
+
             // Worktree
             let worktree = match GitWorktree::new(
                 &repo_path,
@@ -788,7 +791,7 @@ impl Reviewer {
                 current_status = "Applied".to_string();
 
                 attempts.push(BaselineAttempt {
-                    baseline: baseline_ref.clone(),
+                    baseline: baseline_display.clone(),
                     status: current_status,
                     log: current_log,
                 });
@@ -845,7 +848,7 @@ impl Reviewer {
                 current_log.push_str(&apply_logs);
                 current_log.push_str("Application failed.\n");
                 attempts.push(BaselineAttempt {
-                    baseline: baseline_ref.clone(),
+                    baseline: baseline_display.clone(),
                     status: current_status,
                     log: current_log,
                 });

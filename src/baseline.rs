@@ -232,6 +232,22 @@ impl BaselineRegistry {
             candidates.push(BaselineResolution::Commit(commit));
         }
 
+        // 1.5 Version Tag from Subject
+        if let Some(version) = extract_version_tag(subject) {
+            if version.ends_with(".y") {
+                candidates.push(BaselineResolution::RemoteTarget {
+                    url: "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
+                        .to_string(),
+                    name: "stable".to_string(),
+                    branch: Some(format!("linux-{}", version)),
+                });
+                let base_version = version.strip_suffix(".y").unwrap();
+                candidates.push(BaselineResolution::LocalRef(format!("v{}", base_version)));
+            } else {
+                candidates.push(BaselineResolution::LocalRef(format!("v{}", version)));
+            }
+        }
+
         // 2. Subsystem Heuristic
         let heuristic_candidates = self.resolve_subsystem_heuristic(files, subject);
         candidates.extend(heuristic_candidates);
@@ -324,26 +340,84 @@ impl BaselineRegistry {
             ];
         }
 
-        let max_count = *candidates[0].1;
-        let top_candidates: Vec<_> = candidates
-            .iter()
-            .filter(|(_, count)| **count == max_count)
-            .map(|(tree, _)| *tree)
-            .collect();
-
         let subject_lower = subject.to_lowercase();
-        let keywords = [
-            "net", "bpf", "drm", "mm", "sched", "x86", "arm", "arm64", "scsi", "usb", "perf",
-        ];
+        let prefixes = crate::patch::get_subject_prefixes(subject);
         let is_next = subject_lower.contains("next");
 
-        let mut filtered = Vec::new();
-        for tree in &top_candidates {
-            let (url, branch) = tree;
-            let mut matched_kw = false;
+        let mut base_prefixes = Vec::new();
+        for prefix in &prefixes {
+            let prefix_lower = prefix.to_lowercase();
+            base_prefixes.push(prefix_lower.clone());
+            if prefix_lower.contains('-') {
+                for part in prefix_lower.split('-') {
+                    if part != "next" && part != "net" {
+                        base_prefixes.push(part.to_string());
+                    }
+                }
+            }
+        }
+
+        let mut scored_candidates: Vec<(i32, BaselineResolution)> = Vec::new();
+
+        for ((url, branch), count) in candidates {
+            let mut score = (*count as i32) * 10;
+            let url_lower = url.to_lowercase();
+            let branch_lower = branch
+                .as_ref()
+                .map(|b| b.to_lowercase())
+                .unwrap_or_default();
+
+            let mut has_prefix_match = false;
+            for prefix in &base_prefixes {
+                if url_lower.ends_with(&format!("/{}.git", prefix)) || branch_lower == *prefix {
+                    score += 50;
+                }
+                if url_lower.contains(prefix) || branch_lower.contains(prefix) {
+                    has_prefix_match = true;
+                }
+            }
+            if has_prefix_match {
+                score += 100;
+            }
+
+            if url_lower.contains("mptcp") {
+                if is_next {
+                    if branch_lower == "export" {
+                        score += 50;
+                    }
+                    if branch_lower == "export-net" {
+                        score -= 50;
+                    }
+                } else {
+                    if branch_lower == "export-net" {
+                        score += 50;
+                    }
+                    if branch_lower == "export" {
+                        score -= 50;
+                    }
+                }
+            } else {
+                let tree_is_next = url_lower.contains("next") || branch_lower.contains("next");
+                if is_next {
+                    if tree_is_next {
+                        score += 50;
+                    } else {
+                        score -= 50;
+                    }
+                } else if tree_is_next {
+                    score -= 50;
+                } else {
+                    score += 50;
+                }
+            }
+
+            // Fallback keywords match (legacy heuristic)
+            let keywords = [
+                "net", "bpf", "drm", "mm", "sched", "x86", "arm", "arm64", "scsi", "usb", "perf",
+            ];
             for kw in keywords {
-                let url_matches = url.contains(kw);
-                let branch_matches = branch.as_ref().map(|b| b.contains(kw)).unwrap_or(false);
+                let url_matches = url_lower.contains(kw);
+                let branch_matches = branch_lower.contains(kw);
                 let subject_or_subsys_matches = subject_lower.contains(kw)
                     || matched_subsystem_name
                         .as_deref()
@@ -351,57 +425,24 @@ impl BaselineRegistry {
                         .unwrap_or(false);
 
                 if subject_or_subsys_matches && (url_matches || branch_matches) {
-                    matched_kw = true;
-                    filtered.push(self.resolve_url(url, branch.clone()));
+                    score += 10;
                 }
             }
-            if !matched_kw
-                && is_next
-                && (url.contains("next")
-                    || branch.as_ref().map(|b| b.contains("next")).unwrap_or(false))
-            {
-                filtered.push(self.resolve_url(url, branch.clone()));
+
+            scored_candidates.push((score, self.resolve_url(url, branch.clone())));
+        }
+
+        // Sort descending by score
+        scored_candidates.sort_by(|a, b| b.0.cmp(&a.0));
+
+        let mut unique_filtered = Vec::new();
+        for (_, res) in scored_candidates {
+            if !unique_filtered.contains(&res) {
+                unique_filtered.push(res);
             }
         }
 
-        if !filtered.is_empty() {
-            // If we have keyword matches, and the subject mentions 'next',
-            // we ONLY return the 'next' trees from the keyword-matched set.
-            // This maintains the original prioritization behavior.
-            if is_next {
-                let next_only: Vec<_> = filtered
-                    .iter()
-                    .filter(|c| {
-                        if let BaselineResolution::RemoteTarget { url, branch, .. } = c {
-                            url.contains("next")
-                                || branch.as_ref().map(|b| b.contains("next")).unwrap_or(false)
-                        } else {
-                            false
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                if !next_only.is_empty() {
-                    return next_only;
-                }
-            }
-
-            // Deduplicate filtered results just in case multiple keywords matched the same tree
-            let mut unique_filtered = Vec::new();
-            for f in filtered {
-                if !unique_filtered.contains(&f) {
-                    unique_filtered.push(f);
-                }
-            }
-            return unique_filtered;
-        }
-
-        // If filtering results in nothing (e.g. subject didn't match keywords, or all were 'next' vs non-next mismatch),
-        // return all top candidates.
-        top_candidates
-            .into_iter()
-            .map(|(url, branch)| self.resolve_url(url, branch.clone()))
-            .collect()
+        unique_filtered
     }
 
     fn resolve_url(&self, url: &str, branch: Option<String>) -> BaselineResolution {
@@ -454,6 +495,14 @@ pub fn extract_base_commit(body: &str) -> Option<String> {
         BASE_COMMIT_RE.get_or_init(|| Regex::new(r"(?m)^base-commit: ([0-9a-f]{40})").unwrap());
     re.captures(body)
         .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
+}
+
+pub fn extract_version_tag(subject: &str) -> Option<String> {
+    static VERSION_TAG_RE: OnceLock<Regex> = OnceLock::new();
+    let re = VERSION_TAG_RE
+        .get_or_init(|| Regex::new(r"(?i)\bv?(\d+\.\d+(?:\.\d+)?(?:-rc\d+)?(?:\.y)?)\b").unwrap());
+    re.captures(subject)
+        .and_then(|caps| caps.get(1).map(|m| m.as_str().to_lowercase()))
 }
 
 #[cfg(test)]
@@ -654,9 +703,10 @@ F: patterns/
             })
             .collect();
 
-        // Should only contain net-next (from subsystem heuristic)
-        assert!(names_next.contains(&"net-next".to_string()));
-        assert!(!names_next.contains(&"net".to_string()));
+        // Should prioritize net-next over net
+        let pos_net_next = names_next.iter().position(|x| x == "net-next").unwrap();
+        let pos_net = names_next.iter().position(|x| x == "net").unwrap();
+        assert!(pos_net_next < pos_net);
 
         // Without "next" in subject
         let candidates_nonext = registry.resolve_candidates(&files, "[PATCH net] something", None);
@@ -668,8 +718,9 @@ F: patterns/
             })
             .collect();
 
-        // Should contain both (inclusive behavior)
-        assert!(names_nonext.contains(&"net".to_string()));
-        assert!(names_nonext.contains(&"net-next".to_string()));
+        // Should prioritize net over net-next
+        let pos_net_nonext = names_nonext.iter().position(|x| x == "net").unwrap();
+        let pos_net_next_nonext = names_nonext.iter().position(|x| x == "net-next").unwrap();
+        assert!(pos_net_nonext < pos_net_next_nonext);
     }
 }
