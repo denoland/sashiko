@@ -1769,12 +1769,17 @@ impl Database {
                 new_prefixes == old_prefixes
             };
 
+            // Thread Enforcement: To prevent cross-thread "stealing" of patches for resends of the same series,
+            // we strictly require multi-part series patches to belong to the same thread.
+            let thread_compatible = same_thread || is_singleton;
+
             if author_or_series_match
                 && (!strict_author || (date - existing_date).abs() < 86400)
                 && (versions_compatible || same_thread)
                 && (total_parts == existing_total || existing_total == 1 || total_parts == 1)
                 && subject_match
                 && prefix_match
+                && thread_compatible
                 && !index_collision
             {
                 matches.push((id, existing_subject_index));
@@ -4271,7 +4276,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cross_thread_merge() {
+    async fn test_cross_thread_no_merge() {
         let db = setup_db().await;
 
         // 1. Create Thread A and Patchset A (1/2)
@@ -4361,23 +4366,28 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        // 3. Assert they merged (ps2 should equal ps1)
-        assert_eq!(
+        // 3. Assert they DID NOT merge (ps2 should NOT equal ps1)
+        assert_ne!(
             ps1, ps2,
-            "Patchsets from different threads should merge if author/time match"
+            "Patchsets from different threads should NOT merge even if author/time match"
         );
 
         // 4. Verify total patches count or received parts
-        // create_patch calls update_received_parts
         db.create_patch(ps1, "msg1", 1, "").await.unwrap();
         db.create_patch(ps2, "msg2", 2, "").await.unwrap();
 
-        let details = db
+        let details1 = db
             .get_patchset_details(ps1, None, None)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(details["received_parts"], 2);
+        assert_eq!(details1["received_parts"], 1);
+        let details2 = db
+            .get_patchset_details(ps2, None, None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(details2["received_parts"], 1);
     }
 
     #[tokio::test]
