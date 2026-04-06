@@ -17,7 +17,5 @@ cc = []
 
 [subsystems.hwmon]
 lists = ["linux-hwmon@vger.kernel.org"]
-reply_all = false
-reply_to_author = false
-cc_maintainers = false
-cc = ["linux@roeck-us.net", "roman.gushchin@linux.dev"]
+reply_to_author = true
+cc = ["linux-hwmon@vger.kernel.org"]
