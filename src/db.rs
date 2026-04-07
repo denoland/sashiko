@@ -2145,9 +2145,14 @@ impl Database {
                 WHERE r.status = 'Reviewed'
                 GROUP BY r.patchset_id
              ) f ON p.id = f.patchset_id
-             {} 
+             LEFT JOIN (
+                SELECT patchset_id, MAX(created_at) as last_review_at
+                FROM reviews
+                GROUP BY patchset_id
+             ) lr ON p.id = lr.patchset_id
+             {}
              GROUP BY p.id
-             ORDER BY p.date DESC LIMIT ? OFFSET ?",
+             ORDER BY COALESCE(lr.last_review_at, p.date) DESC LIMIT ? OFFSET ?",
             where_clause
         );
 
