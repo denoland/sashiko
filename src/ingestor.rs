@@ -14,13 +14,10 @@
 
 use crate::db::Database;
 use crate::events::Event;
-use crate::nntp::NntpClient;
+use crate::github::GitHubClient;
 use crate::settings::Settings;
 use anyhow::{Result, anyhow};
-use serde_json::Value;
-use std::process::Stdio;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{Duration, sleep};
@@ -31,7 +28,7 @@ pub struct Ingestor {
     db: Arc<Database>,
     sender: Sender<Event>,
     download: Option<usize>,
-    nntp_enabled: bool,
+    track: bool,
 }
 
 impl Ingestor {
@@ -40,97 +37,45 @@ impl Ingestor {
         db: Arc<Database>,
         sender: Sender<Event>,
         download: Option<usize>,
-        nntp_enabled: bool,
+        track: bool,
     ) -> Self {
         Self {
             settings,
             db,
             sender,
             download,
-            nntp_enabled,
+            track,
         }
     }
 
-    async fn get_tracked_groups(&self) -> Result<Vec<(String, String)>> {
-        let mut groups = Vec::new();
-        let mut available_groups: Option<Vec<String>> = None;
+    fn github_client(&self) -> GitHubClient {
+        GitHubClient::new(
+            &self.settings.github.owner,
+            &self.settings.github.repo,
+            self.settings.github.token.clone(),
+        )
+    }
 
-        for entry in &self.settings.mailing_lists.track {
-            if let Some((name, group)) = entry.split_once(':') {
-                groups.push((name.to_string(), group.to_string()));
-            } else if entry.contains('.') {
-                groups.push((entry.clone(), entry.clone()));
-            } else {
-                // Heuristics for common lists
-                let mut resolved_group = None;
-
-                // Special case hardcoded mapping
-                if entry == "linux-mm" {
-                    resolved_group = Some("org.kvack.linux-mm".to_string());
-                } else {
-                    // Fetch available groups if we haven't already
-                    if available_groups.is_none() {
-                        match NntpClient::connect(
-                            &self.settings.nntp.server,
-                            self.settings.nntp.port,
-                        )
-                        .await
-                        {
-                            Ok(mut client) => match client.list().await {
-                                Ok(list) => available_groups = Some(list),
-                                Err(e) => warn!(
-                                    "Failed to fetch NNTP group list for dynamic resolution: {}",
-                                    e
-                                ),
-                            },
-                            Err(e) => {
-                                warn!("Failed to connect to NNTP for dynamic resolution: {}", e)
-                            }
-                        }
-                    }
-
-                    // Try to find a group that ends with .entry
-                    if let Some(list) = &available_groups {
-                        let suffix = format!(".{}", entry);
-                        if let Some(found) = list.iter().find(|g| g.ends_with(&suffix)) {
-                            info!(
-                                "Dynamically resolved short name '{}' to NNTP group '{}'",
-                                entry, found
-                            );
-                            resolved_group = Some(found.clone());
-                        }
-                    }
-                }
-
-                // Fallback to old vger default if resolution failed
-                let group = resolved_group.unwrap_or_else(|| {
-                    let fallback = format!("org.kernel.vger.{}", entry);
-                    warn!(
-                        "Could not dynamically resolve NNTP group for '{}', falling back to '{}'",
-                        entry, fallback
-                    );
-                    fallback
-                });
-
-                groups.push((entry.clone(), group));
-            }
-        }
-        Ok(groups)
+    fn repo_path(&self) -> &str {
+        &self.settings.git.repository_path
     }
 
     pub async fn run(&self) -> Result<()> {
+        // Ensure the mailing list entry exists for linking
+        self.db.ensure_mailing_list("github", "github").await?;
+
         if let Some(n) = self.download {
             info!(
-                "Bootstrap requested: downloading/ingesting last {} messages from git archive",
-                n
+                "Download mode: fetching last {} merged PRs from {}/{}",
+                n, self.settings.github.owner, self.settings.github.repo
             );
-            if let Err(e) = self.run_git_bootstrap(n).await {
-                error!("Git bootstrap failed: {}", e);
+            if let Err(e) = self.run_download(n).await {
+                error!("Download mode failed: {}", e);
             }
         }
 
-        if self.nntp_enabled {
-            self.run_nntp().await?;
+        if self.track {
+            self.run_poll().await?;
         } else {
             info!("Live tracking disabled (default). Use --track to enable.");
         }
@@ -138,431 +83,243 @@ impl Ingestor {
         Ok(())
     }
 
-    async fn run_git_bootstrap(&self, limit: usize) -> Result<()> {
-        let groups = self.get_tracked_groups().await?;
-        if groups.is_empty() {
-            return Ok(());
-        }
+    /// Download mode: fetch the last N recently merged PRs and process them.
+    async fn run_download(&self, limit: usize) -> Result<()> {
+        let client = self.github_client();
 
-        // Split the total limit evenly across groups (ceiling division)
-        let limit_per_group = limit.div_ceil(groups.len());
+        // List closed PRs sorted by recently updated, filter for merged ones.
+        let mut merged_prs = Vec::new();
+        let mut page = 1u32;
 
-        for (name, group) in groups {
-            let mut group_remaining = limit_per_group;
-
-            // Ensure the mailing list exists in the DB so messages can be linked to it
-            // We use &group because ensure_mailing_list expects &str
-            if let Err(e) = self.db.ensure_mailing_list(&name, &group).await {
-                error!("Failed to ensure mailing list {} exists: {}", group, e);
-                // Continue anyway; linking may fail if the list doesn't exist.
+        while merged_prs.len() < limit {
+            let prs = client.list_closed_prs(100, page).await?;
+            if prs.is_empty() {
+                break;
             }
 
-            match self.resolve_git_info(&group).await {
-                Ok((epochs, base_path)) => {
-                    for (epoch, url) in epochs {
-                        if group_remaining == 0 {
-                            break;
-                        }
-
-                        let epoch_path = base_path.join(epoch.to_string());
-                        info!(
-                            "Bootstrapping group {} epoch {} from {} to {:?}",
-                            group, epoch, url, epoch_path
-                        );
-
-                        if let Err(e) = self
-                            .bootstrap_repo(&url, &epoch_path, group_remaining)
-                            .await
-                        {
-                            error!("Failed to bootstrap group {} epoch {}: {}", group, epoch, e);
-                            continue;
-                        }
-                        match self
-                            .ingest_git_objects(&group, &epoch_path, Some(group_remaining))
-                            .await
-                        {
-                            Ok(count) => {
-                                info!("Ingested {} messages from epoch {}", count, epoch);
-                                group_remaining = group_remaining.saturating_sub(count);
-                            }
-                            Err(e) => {
-                                error!(
-                                    "Failed to ingest objects for group {} epoch {}: {}",
-                                    group, epoch, e
-                                );
-                            }
-                        }
-                    }
+            for pr in prs {
+                if merged_prs.len() >= limit {
+                    break;
                 }
-                Err(e) => {
-                    error!("Failed to resolve git info for group {}: {}", group, e);
+                // A merged PR has merged_at set
+                if pr.merged_at.is_some() {
+                    merged_prs.push((pr.number, pr.title, pr.base.ref_name, pr.user.login));
                 }
             }
+
+            page += 1;
         }
+
+        info!("Found {} merged PRs to process", merged_prs.len());
+
+        for (pr_number, title, base_branch, author_login) in merged_prs {
+            if let Err(e) = self
+                .process_pr(pr_number, &title, &base_branch, &author_login)
+                .await
+            {
+                error!("Failed to process PR #{}: {}", pr_number, e);
+            }
+        }
+
         Ok(())
     }
 
-    async fn resolve_git_info(
-        &self,
-        group: &str,
-    ) -> Result<(Vec<(i32, String)>, std::path::PathBuf)> {
-        // Dynamic path: archives/<group_name>
-        let path = std::path::PathBuf::from("archives").join(group);
+    /// Poll mode: continuously poll for new/updated open PRs.
+    async fn run_poll(&self) -> Result<()> {
+        let poll_interval = self.settings.github.poll_interval_secs;
+        info!(
+            "Starting GitHub PR poller for {}/{} (interval: {}s)",
+            self.settings.github.owner, self.settings.github.repo, poll_interval
+        );
 
-        // Dynamic URL heuristic
-        // org.kernel.vger.linux-kernel -> lkml
-        // org.kernel.vger.netdev -> netdev
-        // etc.
-        let list_id = if group == "org.kernel.vger.linux-kernel" {
-            "lkml"
-        } else {
-            group.split('.').next_back().unwrap_or(group)
-        };
-
-        let epochs = self.find_epoch_urls(list_id).await?;
-
-        Ok((epochs, path))
+        loop {
+            if let Err(e) = self.poll_cycle().await {
+                error!("GitHub poll cycle failed: {}", e);
+            }
+            sleep(Duration::from_secs(poll_interval)).await;
+        }
     }
 
-    async fn find_epoch_urls(&self, list_id: &str) -> Result<Vec<(i32, String)>> {
-        info!("Fetching manifest to find epochs for {}", list_id);
+    async fn poll_cycle(&self) -> Result<()> {
+        let client = self.github_client();
 
-        let output = Command::new("bash")
-            .arg("-c")
-            .arg("curl -s https://lore.kernel.org/manifest.js.gz | gunzip")
+        // Fetch recently updated open PRs
+        let prs = client.list_open_prs(100, 1).await?;
+        info!("Found {} open PRs", prs.len());
+
+        let last_known = self.db.get_last_article_num("github").await?;
+
+        for pr in prs {
+            // Use PR number as the article ID for tracking.
+            // Skip PRs we've already processed (PR number <= last_known).
+            if pr.number <= last_known {
+                continue;
+            }
+
+            if let Err(e) = self
+                .process_pr(pr.number, &pr.title, &pr.base.ref_name, &pr.user.login)
+                .await
+            {
+                error!("Failed to process PR #{}: {}", pr.number, e);
+                continue;
+            }
+
+            // Update high-water mark
+            self.db.update_last_article_num("github", pr.number).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Process a single PR: fetch the PR diff as a single patch for review.
+    async fn process_pr(
+        &self,
+        pr_number: u64,
+        title: &str,
+        base_branch: &str,
+        author_login: &str,
+    ) -> Result<()> {
+        let repo_path = self.repo_path();
+        info!("Processing PR #{}: {}", pr_number, title);
+
+        let client = self.github_client();
+
+        // 1. Fetch both the PR head and the base branch with enough depth for merge-base
+        let pr_ref = format!("pull/{}/head", pr_number);
+        let local_ref = format!("refs/pull/{}/head", pr_number);
+        let fetch_refspec = format!("{}:{}", pr_ref, local_ref);
+
+        let output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["fetch", "--depth", "200", "origin", &fetch_refspec, &format!("+refs/heads/{}:refs/remotes/origin/{}", base_branch, base_branch)])
             .output()
             .await?;
 
         if !output.status.success() {
-            return Err(anyhow!("Failed to fetch manifest"));
+            return Err(anyhow!(
+                "git fetch PR #{} failed: {}",
+                pr_number,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
         }
 
-        let json: Value = serde_json::from_slice(&output.stdout)?;
-        let map = json
-            .as_object()
-            .ok_or_else(|| anyhow!("Manifest is not a JSON object"))?;
+        // 2. Get the merge base — deepen incrementally if needed
+        let origin_base = format!("origin/{}", base_branch);
+        let mut base_sha = None;
 
-        let mut epochs = Vec::new();
-        let prefix = format!("/{}/git/", list_id);
-
-        for (key, _val) in map {
-            if key.starts_with(&prefix) && key.ends_with(".git") {
-                let suffix = &key[prefix.len()..key.len() - 4];
-                if let Ok(epoch) = suffix.parse::<i32>() {
-                    epochs.push((epoch, format!("https://lore.kernel.org{}", key)));
-                }
-            }
-        }
-
-        epochs.sort_by(|a, b| b.0.cmp(&a.0)); // Descending order
-
-        if epochs.is_empty() {
-            warn!(
-                "Could not find any epochs for {}, defaulting to 0.git",
-                list_id
-            );
-            epochs.push((0, format!("https://lore.kernel.org/{}/0.git", list_id)));
-        }
-
-        info!("Found {} epochs for {}", epochs.len(), list_id);
-        Ok(epochs)
-    }
-
-    async fn bootstrap_repo(&self, url: &str, path: &std::path::Path, n: usize) -> Result<()> {
-        // 1. Ensure repo exists
-        if !path.exists() {
-            info!(
-                "Cloning archive from {} to {:?} with depth {}",
-                url, path, n
-            );
-            // Parent directory must exist
-            if let Some(parent) = path.parent() {
-                tokio::fs::create_dir_all(parent).await?;
+        for depth in &[0, 200, 500] {
+            if *depth > 0 {
+                // Deepen the repo to find the merge base
+                let _ = Command::new("git")
+                    .current_dir(repo_path)
+                    .args(["fetch", "--deepen", &depth.to_string(), "origin", &format!("+refs/heads/{}:refs/remotes/origin/{}", base_branch, base_branch)])
+                    .output()
+                    .await;
             }
 
             let output = Command::new("git")
-                .arg("clone")
-                .arg("--bare")
-                .arg(format!("--depth={}", n))
-                .arg(url)
-                .arg(path)
+                .current_dir(repo_path)
+                .args(["merge-base", &origin_base, &local_ref])
                 .output()
                 .await?;
 
-            if !output.status.success() {
-                return Err(anyhow!(
-                    "Git clone failed: {}",
-                    String::from_utf8_lossy(&output.stderr).trim()
-                ));
-            }
-        } else {
-            // Repo exists, ensure remote is correct then fetch
-            let remote_output = Command::new("git")
-                .arg("-c")
-                .arg("safe.bareRepository=all")
-                .current_dir(path)
-                .arg("remote")
-                .arg("get-url")
-                .arg("origin")
-                .output()
-                .await?;
-
-            if remote_output.status.success() {
-                let current_url = String::from_utf8_lossy(&remote_output.stdout)
-                    .trim()
-                    .to_string();
-                if current_url != url {
-                    info!("Updating remote origin from {} to {}", current_url, url);
-                    let set_url_output = Command::new("git")
-                        .arg("-c")
-                        .arg("safe.bareRepository=all")
-                        .current_dir(path)
-                        .arg("remote")
-                        .arg("set-url")
-                        .arg("origin")
-                        .arg(url)
-                        .output()
-                        .await?;
-
-                    if !set_url_output.status.success() {
-                        warn!(
-                            "Failed to update remote url: {}",
-                            String::from_utf8_lossy(&set_url_output.stderr)
-                        );
-                    }
-                }
-            }
-
-            info!("Fetching latest changes in {:?} with depth {}", path, n);
-            let output = Command::new("git")
-                .arg("-c")
-                .arg("safe.bareRepository=all")
-                .current_dir(path)
-                .arg("fetch")
-                .arg(format!("--depth={}", n))
-                .arg("origin")
-                .arg("+refs/heads/*:refs/heads/*") // Fetch all heads
-                .output()
-                .await?;
-
-            if !output.status.success() {
-                // Warn but continue, maybe we are offline
-                warn!(
-                    "Git fetch failed: {}",
-                    String::from_utf8_lossy(&output.stderr).trim()
-                );
-            }
-        }
-        Ok(())
-    }
-    async fn run_nntp(&self) -> Result<()> {
-        let groups = self.get_tracked_groups().await?;
-        info!("Starting NNTP Ingestor for groups: {:?}", groups);
-
-        loop {
-            if let Err(e) = self.process_nntp_cycle().await {
-                error!("NNTP Ingestion cycle failed: {}", e);
-            }
-            sleep(Duration::from_secs(60)).await;
-        }
-    }
-
-    async fn process_nntp_cycle(&self) -> Result<()> {
-        let mut client =
-            NntpClient::connect(&self.settings.nntp.server, self.settings.nntp.port).await?;
-
-        for (name, group_name) in self.get_tracked_groups().await? {
-            let group_name = &group_name;
-            self.db.ensure_mailing_list(&name, group_name).await?;
-
-            let info = client.group(group_name).await?;
-            let last_known = self.db.get_last_article_num(group_name).await?;
-
-            info!(
-                "Group {}: estimated count={}, low={}, high={}, last_known={}",
-                group_name, info.number, info.low, info.high, last_known
-            );
-
-            let mut current = last_known;
-            if current == 0 && info.high > 0 {
-                // Initialize with a safe overlap window (e.g. 4000 messages ~ 1 day for LKML)
-                // This ensures we catch up if git archive is slightly stale.
-                let overlap = if self.download.is_some() {
-                    // If we just bootstrapped from git, we are likely close to the tip.
-                    // We only need a small overlap to cover the lag between git mirror and NNTP.
-                    100
-                } else {
-                    4000
-                };
-                current = info.high.saturating_sub(overlap);
-                self.db.update_last_article_num(group_name, current).await?;
-                info!(
-                    "Initialized high-water mark to {} (overlap window: {})",
-                    current, overlap
-                );
-            }
-
-            // Fetch ALL pending messages
-            while current < info.high {
-                let next_id = current + 1;
-                // info!("Fetching article {}", next_id);
-                match client.article(&next_id.to_string()).await {
-                    Ok(lines) => {
-                        self.sender
-                            .send(Event::ArticleFetched {
-                                group: group_name.clone(),
-                                article_id: next_id.to_string(),
-                                content: lines,
-                                raw: None,
-                                baseline: None,
-                            })
-                            .await?;
-                        self.db.update_last_article_num(group_name, next_id).await?;
-                        current = next_id;
-                    }
-                    Err(e) => {
-                        let msg = e.to_string();
-                        // 423 is "No such article number in this group"
-                        if msg.contains("423") {
-                            warn!("Article {} missing (423), skipping", next_id);
-                            self.db.update_last_article_num(group_name, next_id).await?;
-                            current = next_id;
-                        } else {
-                            error!("Failed to fetch article {}: {}", next_id, e);
-                            break; // Stop and retry later (transient error or connection lost)
-                        }
-                    }
-                }
+            if output.status.success() {
+                base_sha = Some(String::from_utf8_lossy(&output.stdout).trim().to_string());
+                break;
             }
         }
 
-        client.quit().await?;
-        Ok(())
-    }
-
-    async fn ingest_git_objects(
-        &self,
-        group_name: &str,
-        path: &std::path::Path,
-        limit: Option<usize>,
-    ) -> Result<usize> {
-        info!("Starting Git Ingestion from {:?}", path);
-
-        // 1. Start git rev-list (Producer)
-        info!("Starting object enumeration...");
-        let mut rev_list_cmd = Command::new("git");
-        rev_list_cmd
-            .arg("-c")
-            .arg("safe.bareRepository=all")
-            .current_dir(path)
-            .arg("rev-list")
-            .arg("--all")
-            .arg("--objects");
-
-        if let Some(n) = limit {
-            rev_list_cmd.arg(format!("--max-count={}", n));
-        }
-
-        // IMPORTANT: kill_on_drop ensure process is killed if the future is cancelled (Ctrl-C)
-        rev_list_cmd.kill_on_drop(true);
-        rev_list_cmd.stdout(Stdio::piped());
-
-        let mut rev_list_child = rev_list_cmd.spawn()?;
-        let rev_list_stdout = rev_list_child
-            .stdout
-            .take()
-            .ok_or_else(|| anyhow!("Failed to open stdout for git rev-list"))?;
-        let mut rev_list_reader = BufReader::new(rev_list_stdout).lines();
-
-        // 2. Start git cat-file --batch (Consumer)
-        let mut cat_file_cmd = Command::new("git");
-        cat_file_cmd
-            .arg("-c")
-            .arg("safe.bareRepository=all")
-            .current_dir(path)
-            .arg("cat-file")
-            .arg("--batch")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .kill_on_drop(true); // Ensure cleanup
-
-        let mut cat_file_child = cat_file_cmd.spawn()?;
-        let mut cat_stdin = cat_file_child
-            .stdin
-            .take()
-            .ok_or_else(|| anyhow!("Failed to open stdin for git cat-file"))?;
-        let cat_stdout = cat_file_child
-            .stdout
-            .take()
-            .ok_or_else(|| anyhow!("Failed to open stdout for git cat-file"))?;
-        let mut cat_reader = BufReader::new(cat_stdout);
-
-        let mut count = 0;
-        let mut processed_blobs = 0;
-
-        // 3. Stream: rev-list -> cat-file -> application
-        while let Ok(Some(line)) = rev_list_reader.next_line().await {
-            let hash = line
-                .split_whitespace()
-                .next()
-                .ok_or_else(|| anyhow!("Invalid rev-list output: {}", line))?;
-
-            // Write SHA to cat-file
-            cat_stdin
-                .write_all(format!("{}\n", hash).as_bytes())
-                .await?;
-            cat_stdin.flush().await?;
-
-            // Read header: <sha> <type> <size>
-            let mut header = String::new();
-            if cat_reader.read_line(&mut header).await? == 0 {
-                break; // Unexpected EOF from cat-file
-            }
-
-            let parts: Vec<&str> = header.split_whitespace().collect();
-            if parts.len() < 3 {
-                warn!("Invalid batch header for {}: {}", hash, header);
-                continue;
-            }
-
-            let obj_type = parts[1];
-            let size: usize = parts[2].parse().unwrap_or(0);
-
-            // Read content + newline
-            let mut content = vec![0u8; size];
-            cat_reader.read_exact(&mut content).await?;
-
-            // Consume the trailing newline that --batch outputs
-            let mut newline = [0u8; 1];
-            cat_reader.read_exact(&mut newline).await?;
-
-            if obj_type == "blob" {
-                // We provide raw content, so 'content' field is ignored by the parser.
-                // We pass an empty vector to avoid expensive UTF-8 validation and allocation.
-                self.sender
-                    .send(Event::ArticleFetched {
-                        group: group_name.to_string(),
-                        article_id: hash.to_string(),
-                        content: Vec::new(),
-                        raw: Some(content),
-                        baseline: None,
-                    })
+        let base_sha = match base_sha {
+            Some(sha) => sha,
+            None => {
+                // Last resort: use origin/base_branch HEAD directly
+                warn!("merge-base failed for PR #{} after deepening, using origin/{}", pr_number, base_branch);
+                let output = Command::new("git")
+                    .current_dir(repo_path)
+                    .args(["rev-parse", &origin_base])
+                    .output()
                     .await?;
-
-                processed_blobs += 1;
-                if processed_blobs % 1000 == 0 {
-                    info!("Processed {} blobs", processed_blobs);
-                }
+                String::from_utf8_lossy(&output.stdout).trim().to_string()
             }
+        };
 
-            count += 1;
+        // 3. Get the head SHA
+        let output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["rev-parse", &local_ref])
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            return Err(anyhow!("Failed to resolve PR head ref for #{}", pr_number));
         }
 
-        info!(
-            "Git ingestion completed. Scanned {} objects, processed {} blobs.",
-            count, processed_blobs
-        );
-        Ok(processed_blobs)
+        let head_sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        // 4. Get the full PR diff (base...head)
+        info!("PR #{}: computing diff {}..{} in {}", pr_number, &base_sha[..12], &head_sha[..12], repo_path);
+        let output = Command::new("git")
+            .current_dir(repo_path)
+            .args(["diff", &base_sha, &head_sha])
+            .output()
+            .await?;
+
+        let diff = if output.status.success() {
+            let d = String::from_utf8_lossy(&output.stdout).to_string();
+            info!("PR #{}: diff size = {} bytes", pr_number, d.len());
+            d
+        } else {
+            return Err(anyhow!(
+                "git diff failed for PR #{}: {}",
+                pr_number,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        };
+
+        if diff.is_empty() {
+            warn!("PR #{} has empty diff (base={} head={})", pr_number, base_sha, head_sha);
+            return Ok(());
+        }
+
+        // 5. Resolve author from GitHub API
+        let author = match client.get_pr_commits(pr_number).await {
+            Ok(commits) if !commits.is_empty() => {
+                let last = commits.last().unwrap();
+                format!("{} <{}>", last.commit.author.name, last.commit.author.email)
+            }
+            _ => format!("{} <{}@users.noreply.github.com>", author_login, author_login),
+        };
+
+        let group = format!("github-pr:1:{}..{}", base_sha, head_sha);
+        let article_id = pr_number.to_string();
+
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs() as i64;
+
+        // 6. Emit a single patch for the whole PR
+        // Use a synthetic message_id (not the head SHA) to avoid merge commit detection
+        let message_id = format!("pr-{}@github.sashiko", pr_number);
+        let event = Event::PatchSubmitted {
+            group: group.clone(),
+            article_id,
+            message_id,
+            subject: title.to_string(),
+            author,
+            message: format!("PR #{}: {}", pr_number, title),
+            diff,
+            base_commit: Some(base_sha),
+            timestamp,
+            index: 1,
+            total: 1,
+        };
+
+        if let Err(e) = self.sender.send(event).await {
+            error!("Failed to send PatchSubmitted event for PR #{}: {}", pr_number, e);
+        }
+
+        info!("Successfully processed PR #{}", pr_number);
+        Ok(())
     }
 }
 
@@ -695,8 +452,8 @@ Subject: [PATCH 1/5] x86/cpu: Add model number for Intel Arrow Lake mobile
 For \"reasons\" Intel has code-named this CPU with a \"_H\" suffix.
 
 [ dhansen: As usual, apply this and send it upstream quickly to
-	   make it easier for anyone who is doing work that
-	   consumes this. ]
+\t   make it easier for anyone who is doing work that
+\t   consumes this. ]
 
 Signed-off-by: Tony Luck <tony.luck@intel.com>
 Signed-off-by: Dave Hansen <dave.hansen@linux.intel.com>
@@ -710,22 +467,22 @@ index 5fcd85fd64fd..197316121f04 100644
 --- a/arch/x86/include/asm/intel-family.h
 +++ b/arch/x86/include/asm/intel-family.h
 @@ -27,6 +27,7 @@
-  *		_X	- regular server parts
-  *		_D	- micro server parts
-  *		_N,_P	- other mobile parts
-+ *		_H	- premium mobile parts
-  *		_S	- other client parts
+  *\t\t_X\t- regular server parts
+  *\t\t_D\t- micro server parts
+  *\t\t_N,_P\t- other mobile parts
++ *\t\t_H\t- premium mobile parts
+  *\t\t_S\t- other client parts
   *
-  *		Historical OPTDIFFs:
+  *\t\tHistorical OPTDIFFs:
 @@ -124,6 +125,7 @@
- #define INTEL_FAM6_METEORLAKE		0xAC
- #define INTEL_FAM6_METEORLAKE_L		0xAA
- 
-+#define INTEL_FAM6_ARROWLAKE_H		0xC5
- #define INTEL_FAM6_ARROWLAKE		0xC6
- 
- #define INTEL_FAM6_LUNARLAKE_M		0xBD
--- 
+ #define INTEL_FAM6_METEORLAKE\t\t0xAC
+ #define INTEL_FAM6_METEORLAKE_L\t\t0xAA
+
++#define INTEL_FAM6_ARROWLAKE_H\t\t0xC5
+ #define INTEL_FAM6_ARROWLAKE\t\t0xC6
+
+ #define INTEL_FAM6_LUNARLAKE_M\t\t0xBD
+--
 2.53.0.rc2.204.g2597b5adb4-goog
 
 
@@ -784,186 +541,17 @@ Link: https://lore.kernel.org/r/875y2u5s8g.ffs@tglx
  3 files changed, 35 insertions(+), 8 deletions(-)
 
 diff --git a/arch/x86/include/asm/i8259.h b/arch/x86/include/asm/i8259.h
-index 637fa1df3512..c715097e92fd 100644
 --- a/arch/x86/include/asm/i8259.h
 +++ b/arch/x86/include/asm/i8259.h
 @@ -69,6 +69,8 @@ struct legacy_pic {
- 	void (*make_irq)(unsigned int irq);
+ \tvoid (*make_irq)(unsigned int irq);
  };
- 
+
 +void legacy_pic_pcat_compat(void);
 +
  extern struct legacy_pic *legacy_pic;
  extern struct legacy_pic null_legacy_pic;
- 
-diff --git a/arch/x86/kernel/acpi/boot.c b/arch/x86/kernel/acpi/boot.c
-index 2a0ea38955df..c55c0ef47a18 100644
---- a/arch/x86/kernel/acpi/boot.c
-+++ b/arch/x86/kernel/acpi/boot.c
-@@ -148,6 +148,9 @@ static int __init acpi_parse_madt(struct acpi_table_header *table)
- 		pr_debug(\"Local APIC address 0x%08x\\n\", madt->address);
- 	}
- 
-+	if (madt->flags & ACPI_MADT_PCAT_COMPAT)
-+		legacy_pic_pcat_compat();
-+
- 	/* ACPI 6.3 and newer support the online capable bit. */
- 	if (acpi_gbl_FADT.header.revision > 6 ||
- 	    (acpi_gbl_FADT.header.revision == 6 &&
-diff --git a/arch/x86/kernel/i8259.c b/arch/x86/kernel/i8259.c
-index 30a55207c000..c20d1832c481 100644
---- a/arch/x86/kernel/i8259.c
-+++ b/arch/x86/kernel/i8259.c
-@@ -32,6 +32,7 @@
-  */
- static void init_8259A(int auto_eoi);
- 
-+static bool pcat_compat __ro_after_init;
- static int i8259A_auto_eoi;
- DEFINE_RAW_SPINLOCK(i8259A_lock);
- 
-@@ -299,15 +300,32 @@ static void unmask_8259A(void)
- 
- static int probe_8259A(void)
- {
-+	unsigned char new_val, probe_val = ~(1 << PIC_CASCADE_IR);
- 	unsigned long flags;
--	unsigned char probe_val = ~(1 << PIC_CASCADE_IR);
--	unsigned char new_val;
-+
-+	/*
-+	 * If MADT has the PCAT_COMPAT flag set, then do not bother probing
-+	 * for the PIC. Some BIOSes leave the PIC uninitialized and probing
-+	 * fails.
-+	 *
-+	 * Right now this causes problems as quite some code depends on
-+	 * nr_legacy_irqs() > 0 or has_legacy_pic() == true. This is silly
-+	 * when the system has an IO/APIC because then PIC is not required
-+	 * at all, except for really old machines where the timer interrupt
-+	 * must be routed through the PIC. So just pretend that the PIC is
-+	 * there and let legacy_pic->init() initialize it for nothing.
-+	 *
-+	 * Alternatively this could just try to initialize the PIC and
-+	 * repeat the probe, but for cases where there is no PIC that's
-+	 * just pointless.
-+	 */
-+	if (pcat_compat)
-+		return nr_legacy_irqs();
-+
- 	/*
--	 * Check to see if we have a PIC.
--	 * Mask all except the cascade and read
--	 * back the value we just wrote. If we don't
--	 * have a PIC, we will read 0xff as opposed to the
--	 * value we wrote.
-+	 * Check to see if we have a PIC.  Mask all except the cascade and
-+	 * read back the value we just wrote. If we don't have a PIC, we
-+	 * will read 0xff as opposed to the value we wrote.
- 	 */
- 	raw_spin_lock_irqsave(&i8259A_lock, flags);
- 
-@@ -429,5 +447,9 @@ static int __init i8259A_init_ops(void)
- 
- 	return 0;
- }
--
- device_initcall(i8259A_init_ops);
-+
-+void __init legacy_pic_pcat_compat(void)
-+{
-+	pcat_compat = true;
-+}
--- 
-2.53.0.rc2.204.g2597b5adb4-goog
-
-
-From bd94d86f490b70c58b3fc5739328a53ad4b18d86 Mon Sep 17 00:00:00 2001
-From: Thomas Gleixner <tglx@linutronix.de>
-Date: Wed, 25 Oct 2023 23:31:35 +0200
-Subject: [PATCH 3/5] x86/tsc: Defer marking TSC unstable to a worker
-
-Tetsuo reported the following lockdep splat when the TSC synchronization
-fails during CPU hotplug:
-
-   tsc: Marking TSC unstable due to check_tsc_sync_source failed
-
-   WARNING: inconsistent lock state
-   inconsistent {IN-HARDIRQ-W} -> {HARDIRQ-ON-W} usage.
-   ffffffff8cfa1c78 (watchdog_lock){?.-.}-{2:2}, at: clocksource_watchdog+0x23/0x5a0
-   {IN-HARDIRQ-W} state was registered at:
-     _raw_spin_lock_irqsave+0x3f/0x60
-     clocksource_mark_unstable+0x1b/0x90
-     mark_tsc_unstable+0x41/0x50
-     check_tsc_sync_source+0x14f/0x180
-     sysvec_call_function_single+0x69/0x90
-
-   Possible unsafe locking scenario:
-     lock(watchdog_lock);
-     <Interrupt>
-       lock(watchdog_lock);
-
-   stack backtrace:
-    _raw_spin_lock+0x30/0x40
-    clocksource_watchdog+0x23/0x5a0
-    run_timer_softirq+0x2a/0x50
-    sysvec_apic_timer_interrupt+0x6e/0x90
-
-The reason is the recent conversion of the TSC synchronization function
-during CPU hotplug on the control CPU to a SMP function call. In case
-that the synchronization with the upcoming CPU fails, the TSC has to be
-marked unstable via clocksource_mark_unstable().
-
-clocksource_mark_unstable() acquires 'watchdog_lock', but that lock is
-taken with interrupts enabled in the watchdog timer callback to minimize
-interrupt disabled time. That's obviously a possible deadlock scenario,
-
-Before that change the synchronization function was invoked in thread
-context so this could not happen.
-
-As it is not crucical whether the unstable marking happens slightly
-delayed, defer the call to a worker thread which avoids the lock context
-problem.
-
-Fixes: 9d349d47f0e3 (\"x86/smpboot: Make TSC synchronization function call based\")
-Reported-by: Tetsuo Handa <penguin-kernel@i-love.sakura.ne.jp>
-Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
-Tested-by: Tetsuo Handa <penguin-kernel@i-love.sakura.ne.jp>
-Cc: stable@vger.kernel.org
-Link: https://lore.kernel.org/r/87zg064ceg.ffs@tglx
----
- arch/x86/kernel/tsc_sync.c | 10 +++++++++-
- 1 file changed, 9 insertions(+), 1 deletion(-)
-
-diff --git a/arch/x86/kernel/tsc_sync.c b/arch/x86/kernel/tsc_sync.c
-index bbc440c93e08..1123ef3ccf90 100644
---- a/arch/x86/kernel/tsc_sync.c
-+++ b/arch/x86/kernel/tsc_sync.c
-@@ -15,6 +15,7 @@
-  * ( The serial nature of the boot logic and the CPU hotplug lock
-  *   protects against more than 2 CPUs entering this code. )
-  */
-+#include <linux/workqueue.h>
- #include <linux/topology.h>
- #include <linux/spinlock.h>
- #include <linux/kernel.h>
-@@ -342,6 +343,13 @@ static inline unsigned int loop_timeout(int cpu)
- 	return (cpumask_weight(topology_core_cpumask(cpu)) > 1) ? 2 : 20;
- }
- 
-+static void tsc_sync_mark_tsc_unstable(struct work_struct *work)
-+{
-+	mark_tsc_unstable(\"check_tsc_sync_source failed\");
-+}
-+
-+static DECLARE_WORK(tsc_sync_work, tsc_sync_mark_tsc_unstable);
-+
- /*
-  * The freshly booted CPU initiates this via an async SMP function call.
-  */
-@@ -395,7 +403,7 @@ static void check_tsc_sync_source(void *__cpu)
- 			\"turning off TSC clock.\\n\", max_warp);
- 		if (random_warps)
- 			pr_warn(\"TSC warped randomly betwe";
+";
 
         let messages = split_mbox(raw);
         assert_eq!(messages.len(), 3);

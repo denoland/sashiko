@@ -44,7 +44,7 @@ struct Args {
     #[arg(long)]
     worktree_dir: Option<PathBuf>,
 
-    #[arg(long, default_value = "third_party/prompts/kernel")]
+    #[arg(long, default_value = "third_party/prompts/deno")]
     prompts: PathBuf,
 
     /// If set, only review the patch with this index (1-based usually).
@@ -374,7 +374,7 @@ async fn main() -> Result<()> {
                         let provider = sashiko::ai::create_provider(&settings).expect("Failed to create AI provider");
 
                         // Enable read_prompt tool only if explicit caching is NOT used.
-                        let prompts_dir = PathBuf::from("third_party/prompts/kernel");
+                        let prompts_dir = PathBuf::from("third_party/prompts/deno");
                         let prompts_tool_path = Some(prompts_dir.join("tool.md"));
 
                         let tools = ToolBox::new(worktree.path.clone(), prompts_tool_path);

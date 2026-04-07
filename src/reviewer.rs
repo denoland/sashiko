@@ -1681,13 +1681,7 @@ impl Reviewer {
         findings: Option<&Vec<Value>>,
         _summary: &str,
     ) -> Result<()> {
-        let sender_address = match &ctx.settings.smtp {
-            Some(s) => s.sender_address.clone(),
-            None => {
-                info!("SMTP not configured, recording email as disabled.");
-                "sashiko-bot@localhost".to_string()
-            }
-        };
+        let sender_address = "sashiko-bot@localhost".to_string();
 
         let findings_count = findings.map(|f| f.len()).unwrap_or(0);
 
@@ -1842,11 +1836,7 @@ impl Reviewer {
 
                 let final_body = format!("{}{}{}", header, inline_review.trim_end(), footer);
 
-                let status = match &ctx.settings.smtp {
-                    None => "Disabled",
-                    Some(s) if s.dry_run => "Dry-Run",
-                    _ => "Pending",
-                };
+                let status = "Disabled";
 
                 ctx.db
                     .insert_email_outbox(

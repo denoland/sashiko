@@ -514,8 +514,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_tx = raw_tx.clone();
     let api_fetch_tx = fetch_tx.clone();
     let allow_all_submit = cli.enable_unsafe_all_submit;
-    let smtp_enabled = settings.smtp.is_some();
-    let dry_run = settings.smtp.as_ref().map(|s| s.dry_run).unwrap_or(false);
     tokio::spawn(async move {
         if let Err(e) = sashiko::api::run_server(
             api_settings,
@@ -523,22 +521,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             api_tx,
             api_fetch_tx,
             allow_all_submit,
-            smtp_enabled,
-            dry_run,
+            false,
+            false,
         )
         .await
         {
             error!("Web API fatal error: {}", e);
         }
     });
-
-    // Start Email Worker
-    if let Some(smtp_settings) = settings.smtp.clone() {
-        let email_worker = sashiko::worker::email::EmailWorker::new(db.clone(), smtp_settings);
-        tokio::spawn(async move {
-            email_worker.run().await;
-        });
-    }
 
     // Start Reviewer Service
     let reviewer = Reviewer::new(db.clone(), settings.clone());
@@ -947,50 +937,16 @@ async fn process_recipients(
     }
 }
 
-// Helper function to map To/Cc to Subsystems
-fn identify_subsystems(to: &str, cc: &str) -> Vec<(String, String)> {
+// Helper function to identify Deno subsystems from the group name.
+// For GitHub PRs, the group contains the commit range; subsystem identification
+// is done based on file paths during the review phase.
+// This function provides a basic "github" subsystem for all GitHub-sourced PRs.
+fn identify_subsystems(to: &str, _cc: &str) -> Vec<(String, String)> {
     let mut subsystems = Vec::new();
-    let mut all_recipients = String::new();
-    all_recipients.push_str(to);
-    all_recipients.push_str(", ");
-    all_recipients.push_str(cc);
 
-    for email in all_recipients.split(',') {
-        let email = email.trim();
-        if email.is_empty() {
-            continue;
-        }
-
-        let lower_email = email.to_lowercase();
-
-        // 1. Static Map (Mimic MAINTAINERS)
-        if lower_email.contains("linux-kernel@vger.kernel.org") {
-            subsystems.push((
-                "LKML".to_string(),
-                "linux-kernel@vger.kernel.org".to_string(),
-            ));
-        } else if lower_email.contains("netdev@vger.kernel.org") {
-            subsystems.push(("netdev".to_string(), "netdev@vger.kernel.org".to_string()));
-        } else if lower_email.contains("bpf@vger.kernel.org") {
-            subsystems.push(("bpf".to_string(), "bpf@vger.kernel.org".to_string()));
-        } else if lower_email.contains("linux-usb@vger.kernel.org") {
-            subsystems.push(("usb".to_string(), "linux-usb@vger.kernel.org".to_string()));
-        } else if lower_email.contains("linux-fsdevel@vger.kernel.org") {
-            subsystems.push((
-                "fsdevel".to_string(),
-                "linux-fsdevel@vger.kernel.org".to_string(),
-            ));
-        } else if lower_email.contains("linux-mm@kvack.org") {
-            subsystems.push(("linux-mm".to_string(), "linux-mm@kvack.org".to_string()));
-        } else if lower_email.ends_with("@vger.kernel.org")
-            || lower_email.ends_with("@lists.linux.dev")
-            || lower_email.ends_with("@lists.infradead.org")
-        {
-            // Fallback: derive name from email user part
-            if let Some(name) = lower_email.split('@').next() {
-                subsystems.push((name.to_string(), lower_email));
-            }
-        }
+    // For GitHub-sourced events, the "to" field is "submitted"
+    if to == "submitted" {
+        subsystems.push(("github".to_string(), "github".to_string()));
     }
 
     subsystems.sort();
@@ -1041,37 +997,13 @@ mod tests {
 
     #[test]
     fn test_identify_subsystems() {
-        // Test known subsystem
-        let to = "linux-kernel@vger.kernel.org";
-        let cc = "netdev@vger.kernel.org";
-        let subsystems = identify_subsystems(to, cc);
-        assert!(subsystems.contains(&(
-            "LKML".to_string(),
-            "linux-kernel@vger.kernel.org".to_string()
-        )));
-        assert!(subsystems.contains(&("netdev".to_string(), "netdev@vger.kernel.org".to_string())));
+        // Test GitHub-sourced events
+        let subsystems = identify_subsystems("submitted", "");
+        assert!(subsystems.contains(&("github".to_string(), "github".to_string())));
+        assert_eq!(subsystems.len(), 1);
 
-        // Test fallback
-        let to = "unknown-list@vger.kernel.org";
-        let cc = "";
-        let subsystems = identify_subsystems(to, cc);
-        assert!(subsystems.contains(&(
-            "unknown-list".to_string(),
-            "unknown-list@vger.kernel.org".to_string()
-        )));
-
-        // Test mixed
-        let to = "linux-usb@vger.kernel.org, random-user@example.com";
-        let cc = "bpf@vger.kernel.org";
-        let subsystems = identify_subsystems(to, cc);
-        assert!(subsystems.contains(&("usb".to_string(), "linux-usb@vger.kernel.org".to_string())));
-        assert!(subsystems.contains(&("bpf".to_string(), "bpf@vger.kernel.org".to_string())));
-        // random-user should be ignored as it doesn't match list patterns
-        assert_eq!(subsystems.len(), 2);
-
-        // Test linux-mm
-        let to = "linux-mm@kvack.org";
-        let subsystems = identify_subsystems(to, "");
-        assert!(subsystems.contains(&("linux-mm".to_string(), "linux-mm@kvack.org".to_string())));
+        // Test non-GitHub events
+        let subsystems = identify_subsystems("other", "");
+        assert!(subsystems.is_empty());
     }
 }

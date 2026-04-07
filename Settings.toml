@@ -4,24 +4,11 @@ log_level = "info"
 url = "sashiko.db"
 token = ""
 
-[mailing_lists]
-track = ["linux-kernel"]
-
-[nntp]
-server = "nntp.lore.kernel.org"
-port = 119
-
-# [smtp]
-# **WARNING: BE VERY CAREFUL WHEN ENABLING EMAIL SENDING.**
-# Sashiko can easily generate and send a large volume of automated emails to
-# public mailing lists, potentially causing disruption or being marked as spam.
-# Ensure your filters and dry_run settings are correctly configured before use.
-# server = "smtp.example.com"
-# port = 587
-# username = "user@example.com"
-# password = "your_password"
-# sender_address = "sashiko@example.com"
-# dry_run = true
+[github]
+owner = "denoland"
+repo = "deno"
+# token = "ghp_..." # Optional: set via SASHIKO_GITHUB__TOKEN or GITHUB_TOKEN env var
+poll_interval_secs = 60
 
 [ai]
 provider = "gemini"
@@ -44,11 +31,11 @@ host = "127.0.0.1"
 port = 8080
 
 [git]
-repository_path = "third_party/linux"
+repository_path = "third_party/deno"
 
 [review]
 concurrency = 20
 worktree_dir = "review_trees"
 timeout_seconds = 7200
 max_retries = 3
-ignore_files = ["MAINTAINERS", ".mailmap", ".gitignore", "LICENSES/"]
+ignore_files = [".gitignore"]

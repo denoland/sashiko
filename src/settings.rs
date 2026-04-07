@@ -22,75 +22,20 @@ pub struct DatabaseSettings {
     pub token: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-#[allow(unused)]
-pub struct NntpSettings {
-    pub server: String,
-    pub port: u16,
+fn default_poll_interval_secs() -> u64 {
+    60
 }
 
 #[derive(Debug, Deserialize, Clone)]
 #[allow(unused)]
-pub struct SmtpSettings {
-    pub server: String,
-    pub port: u16,
-    pub username: Option<String>,
-    pub password: Option<String>,
-    pub sender_address: String,
-    pub reply_to: Option<String>,
-    #[serde(default = "default_dry_run")]
-    pub dry_run: bool,
+pub struct GitHubSettings {
+    pub owner: String,
+    pub repo: String,
+    pub token: Option<String>,
+    #[serde(default = "default_poll_interval_secs")]
+    pub poll_interval_secs: u64,
 }
 
-fn default_dry_run() -> bool {
-    true
-}
-
-#[derive(Debug, Deserialize, Clone)]
-#[allow(unused)]
-pub struct MailingListsSettings {
-    #[serde(deserialize_with = "deserialize_string_or_vec")]
-    pub track: Vec<String>,
-}
-
-fn deserialize_string_or_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    struct StringOrVec;
-
-    impl<'de> serde::de::Visitor<'de> for StringOrVec {
-        type Value = Vec<String>;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            formatter.write_str("string or list of strings")
-        }
-
-        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(value
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect())
-        }
-
-        fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error>
-        where
-            S: serde::de::SeqAccess<'de>,
-        {
-            let mut vec = Vec::new();
-            while let Some(elem) = seq.next_element()? {
-                vec.push(elem);
-            }
-            Ok(vec)
-        }
-    }
-
-    deserializer.deserialize_any(StringOrVec)
-}
 
 fn default_max_input_tokens() -> usize {
     150_000
@@ -250,9 +195,7 @@ pub struct Settings {
     #[serde(default = "default_log_level")]
     pub log_level: String,
     pub database: DatabaseSettings,
-    pub nntp: NntpSettings,
-    pub smtp: Option<SmtpSettings>,
-    pub mailing_lists: MailingListsSettings,
+    pub github: GitHubSettings,
     pub ai: AiSettings,
     pub server: ServerSettings,
     pub git: GitSettings,
